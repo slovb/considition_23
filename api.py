@@ -1,38 +1,47 @@
 import requests
 import os
+import json
 from dotenv import load_dotenv
-from data_keys import (
-    ScoringKeys as SK,
-)
 
 load_dotenv()
 domain = os.environ["domain"]
 
 
-def getMapData(mapName, apiKey):
-    print(domain)
-    try:
-        resp = requests.get(
-            f"{domain}/api/Game/getMapData?mapName={mapName}",
-            headers={"x-api-key": apiKey},
-        )
-        resp.raise_for_status()
-    except:
-        print(resp)
-        return None
-    else:
-        return resp.json()
+def getMapData(mapName, apiKey, cache_folder):
+    path = f'{cache_folder}/{mapName}.json'
+    if not os.path.exists(path):
+        print(f'getting map data for {mapName}')
+        try:
+            resp = requests.get(
+                f"{domain}/api/Game/getMapData?mapName={mapName}",
+                headers={"x-api-key": apiKey},
+            )
+            resp.raise_for_status()
+        except:
+            print(resp)
+            return None
+        else:
+            with open(path, 'w', encoding='utf8') as f:
+                json.dump(resp.json(), f, indent=4)
+    with open(path, 'r', encoding='utf8') as f:
+        return json.load(f)
 
 
-def getGeneralData():
-    try:
-        resp = requests.get(f"{domain}/api/Game/getGeneralGameData")
-        resp.raise_for_status()
-    except:
-        print(resp)
-        return None
-    else:
-        return resp.json()
+def getGeneralData(cache_folder):
+    path = f'{cache_folder}/general.json'
+    if not os.path.exists(path):
+        print('getting general data')
+        try:
+            resp = requests.get(f"{domain}/api/Game/getGeneralGameData")
+            resp.raise_for_status()
+        except:
+            print(resp)
+            return None
+        else:
+            with open(path, 'w', encoding='utf8') as f:
+                json.dump(resp.json(), f, indent=4)
+    with open(path, 'r', encoding='utf8') as f:
+        return json.load(f)
 
 
 def getGame(id_):
