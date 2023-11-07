@@ -45,7 +45,7 @@ def solve(mapEntity, generalData):
                 f9100Count = 0
                 while f3100Count > 4 and f9100Count < max_num:
                     f9100Count += 1
-                    f3100Count -= 3
+                    f3100Count -= 6
                 f3100Count = max(0, min(5, f3100Count))
                 f9100Count = min(5, f9100Count)
                 solution[LK.locations][name] = {
@@ -70,21 +70,38 @@ def store(mapName, score):
         f.write(f'{total} {id_}\n')
 
 
-def generate_lesser_candidates(solution):
+def generate_candidates(solution, mapEntity):
     yield solution
     import copy
     for key in solution[LK.locations]:
-        if solution[LK.locations][key][LK.f3100Count] > 0:
+        if solution[LK.locations][key][LK.f3100Count] > 0: # increase f3100
             candidate = copy.deepcopy(solution)
             candidate[LK.locations][key][LK.f3100Count] -= 1
             if candidate[LK.locations][key][LK.f3100Count] + candidate[LK.locations][key][LK.f9100Count] == 0:
                 del candidate[LK.locations][key]
             yield candidate
-        if solution[LK.locations][key][LK.f9100Count] > 0:
+        if solution[LK.locations][key][LK.f9100Count] > 0: # decrease f9100
             candidate = copy.deepcopy(solution)
             candidate[LK.locations][key][LK.f9100Count] -= 1
             if candidate[LK.locations][key][LK.f3100Count] + candidate[LK.locations][key][LK.f9100Count] == 0:
                 del candidate[LK.locations][key]
+            yield candidate
+        if solution[LK.locations][key][LK.f3100Count] > 0 and solution[LK.locations][key][LK.f9100Count] < 5: # f3100 -> f9100
+            candidate = copy.deepcopy(solution)
+            candidate[LK.locations][key][LK.f3100Count] -= 1
+            candidate[LK.locations][key][LK.f9100Count] += 1
+            yield candidate
+        if solution[LK.locations][key][LK.f3100Count] < 5: # increase f3100
+            candidate = copy.deepcopy(solution)
+            candidate[LK.locations][key][LK.f3100Count] += 1
+            yield candidate
+    for key in mapEntity[LK.locations]: # try to add a missing location
+        if key not in solution[LK.locations]:
+            candidate = copy.deepcopy(solution)
+            candidate[LK.locations][key] = {
+                LK.f3100Count: 1,
+                LK.f9100Count: 0,
+            }
             yield candidate
 
 
@@ -149,7 +166,7 @@ def main(mapName = None):
             had_improvement = True
             while had_improvement:
                 had_improvement = False
-                candidates = generate_lesser_candidates(best_candidate)
+                candidates = generate_candidates(best_candidate, mapEntity)
                 for candidate in candidates:
                     # Score solution locally
                     score = calculateScore(mapName, candidate, mapEntity, generalData)
