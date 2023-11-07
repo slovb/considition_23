@@ -24,37 +24,42 @@ def solve(mapEntity, generalData):
         name = location[LK.locationName]
 
         salesVolume = location[LK.salesVolume]
-        # print(salesVolume)
-        # upper_lim = 120
-        # lower_lim = 14
-        # max_num = 5
-        # if salesVolume > lower_lim:
-        #     f9100Count = int(min(max_num, salesVolume // upper_lim))
-        #     remainder = salesVolume - f9100Count * upper_lim
-        #     f3100Count = int(min(max_num, remainder // lower_lim))
-        #     solution[LK.locations][name] = {
-        #         LK.f9100Count: f9100Count,
-        #         LK.f3100Count: f3100Count,
-        #     }
-        cost = 14
-        max_num = 5
-        if salesVolume > cost:
-            f3100Count = int(salesVolume // cost)
-            f9100Count = 0
-            while f3100Count > 4 and f9100Count < max_num:
-                f9100Count += 1
-                f3100Count -= 6
-            f3100Count = max(0, min(5, f3100Count))
-            f9100Count = min(5, f9100Count)
-            solution[LK.locations][name] = {
-                LK.f9100Count: f9100Count,
-                LK.f3100Count: f3100Count,
-            }
+
+        if False:
+            upper_lim = 120
+            lower_lim = 14
+            max_num = 5
+            if salesVolume > lower_lim:
+                f9100Count = int(min(max_num, salesVolume // upper_lim))
+                remainder = salesVolume - f9100Count * upper_lim
+                f3100Count = int(min(max_num, remainder // lower_lim))
+                solution[LK.locations][name] = {
+                    LK.f9100Count: f9100Count,
+                    LK.f3100Count: f3100Count,
+                }
+        else:
+            cost = 14
+            max_num = 5
+            if salesVolume > cost:
+                f3100Count = int(salesVolume // cost)
+                f9100Count = 0
+                while f3100Count > 4 and f9100Count < max_num:
+                    f9100Count += 1
+                    f3100Count -= 3
+                f3100Count = max(0, min(5, f3100Count))
+                f9100Count = min(5, f9100Count)
+                solution[LK.locations][name] = {
+                    LK.f9100Count: f9100Count,
+                    LK.f3100Count: f3100Count,
+                }
     return solution
 
 
 def store(mapName, score):
     id_ = score[SK.gameId]
+    total = score[SK.gameScore][SK.total]
+    formatted_total = '{:,}'.format(int(total)).replace(',', ' ')
+    print(f'{formatted_total}\t{id_}')
 
     # Store solution locally for visualization
     with open(f"{game_folder}\{id_}.json", "w", encoding="utf8") as f:
@@ -63,6 +68,24 @@ def store(mapName, score):
     with open(f'{log_folder}/{mapName}.txt', 'a', encoding='utf8') as f:
         total = int(score[SK.gameScore][SK.total])
         f.write(f'{total} {id_}\n')
+
+
+def generate_lesser_candidates(solution):
+    yield solution
+    import copy
+    for key in solution[LK.locations]:
+        if solution[LK.locations][key][LK.f3100Count] > 0:
+            candidate = copy.deepcopy(solution)
+            candidate[LK.locations][key][LK.f3100Count] -= 1
+            if candidate[LK.locations][key][LK.f3100Count] + candidate[LK.locations][key][LK.f9100Count] == 0:
+                del candidate[LK.locations][key]
+            yield candidate
+        if solution[LK.locations][key][LK.f9100Count] > 0:
+            candidate = copy.deepcopy(solution)
+            candidate[LK.locations][key][LK.f9100Count] -= 1
+            if candidate[LK.locations][key][LK.f3100Count] + candidate[LK.locations][key][LK.f9100Count] == 0:
+                del candidate[LK.locations][key]
+            yield candidate
 
 
 def main(mapName = None):
@@ -119,18 +142,29 @@ def main(mapName = None):
 
         if mapEntity and generalData:
             solution = solve(mapEntity, generalData)
-
-            # Score solution locally
-            score = calculateScore(mapName, solution, mapEntity, generalData)
-            total = score[SK.gameScore][SK.total]
-
-            # Store
-            id_ = score[SK.gameId]
-            formatted_total = '{:,}'.format(int(total)).replace(',', ' ')
-            print(f'{formatted_total}\t{id_}')
-            store(mapName, score)
             
+            best = 0
+            best_id = None
+            best_candidate = solution
+            had_improvement = True
+            while had_improvement:
+                had_improvement = False
+                candidates = generate_lesser_candidates(best_candidate)
+                for candidate in candidates:
+                    # Score solution locally
+                    score = calculateScore(mapName, candidate, mapEntity, generalData)
+                    total = score[SK.gameScore][SK.total]
+                    print(total)
 
+                    # Store better
+                    if total > best:
+                        best = total
+                        best_id = score[SK.gameId]
+                        best_candidate = candidate
+                        had_improvement = True        
+                        store(mapName, score)
+            formatted_best = '{:,}'.format(int(best)).replace(',', ' ')
+            print(f'Best: {formatted_best}\t{best_id}')
 
 if __name__ == "__main__":
     main()
