@@ -33,6 +33,8 @@ def calculateScore(mapName, solution, change, mapEntity, generalData):
         if key in change:
             f3_count += change[key][LK.f3100Count]
             f9_count += change[key][LK.f9100Count]
+        f3_count = min(5, max(0, f3_count))
+        f9_count = min(5, max(0, f9_count))
 
         if f3_count > 0 or f9_count > 0:
             scoredSolution[LK.locations][key] = {

@@ -7,7 +7,7 @@ from data_keys import (
     LocationKeys as LK,
     ScoringKeys as SK,
 )
-# from multiprocessing import Pool
+from multiprocessing import Pool
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -69,56 +69,80 @@ def store(mapName, score):
         f.write(f'{total} {id_}\n')
 
 
-def generate_changes(solution, mapEntity):
-    for key in solution[LK.locations]:
-        if solution[LK.locations][key][LK.f3100Count] > 0: # increase f3100
+def generate_changes(locations, mapEntity):
+    for key in locations:
+        if locations[key][LK.f3100Count] > 0: # decrease f3100
             yield {
                 key: {
                     LK.f3100Count: -1,
                     LK.f9100Count: 0,
                 }
             }
-        if solution[LK.locations][key][LK.f9100Count] > 0: # decrease f9100
-            yield {
-                key: {
-                    LK.f3100Count: 0,
-                    LK.f9100Count: -1,
-                }
-            }
-        if solution[LK.locations][key][LK.f3100Count] > 0 and solution[LK.locations][key][LK.f9100Count] < 5: # f3100 -> f9100
+        # if locations[key][LK.f9100Count] > 0: # decrease f9100
+        #     yield {
+        #         key: {
+        #             LK.f3100Count: 0,
+        #             LK.f9100Count: -1,
+        #         }
+        #     }
+        if locations[key][LK.f3100Count] > 0 and locations[key][LK.f9100Count] < 5: # f3100 -> f9100
             yield {
                 key: {
                     LK.f3100Count: -1,
                     LK.f9100Count: 1,
                 }
             }
-        if solution[LK.locations][key][LK.f3100Count] < 5: # increase f3100
+        if locations[key][LK.f9100Count] > 0 and locations[key][LK.f3100Count] < 5: # f9100 -> f3100
+            yield {
+                key: {
+                    LK.f3100Count: 1,
+                    LK.f9100Count: -1,
+                }
+            }
+        if locations[key][LK.f3100Count] < 5: # increase f3100
             yield {
                 key: {
                     LK.f3100Count: 1,
                     LK.f9100Count: 0,
                 }
             }
+        # if locations[key][LK.f9100Count] < 5: # increase f9100
+        #     yield {
+        #         key: {
+        #             LK.f3100Count: 0,
+        #             LK.f9100Count: 1,
+        #         }
+        #     }
     for key in mapEntity[LK.locations]: # try to add a missing location
-        if key not in solution[LK.locations]:
+        if key not in locations:
             yield {
                 key: {
                     LK.f3100Count: 1,
                     LK.f9100Count: 0,
                 }
             }
+            # yield {
+            #     key: {
+            #         LK.f3100Count: 0,
+            #         LK.f9100Count: 1,
+            #     }
+            # }
 
 
-def apply_change(solution, change):
+def apply_change(locations, change, capped=True):
     for key, mod in change.items():
-        if key not in solution[LK.locations]:
-            solution[LK.locations][key] = mod
+        if key not in locations:
+            locations[key] = mod
         else:
             for mkey, mval in mod.items():
-                solution[LK.locations][key][mkey] += mval
-            if solution[LK.locations][key][LK.f3100Count] == 0 and solution[LK.locations][key][LK.f9100Count] == 0:
-                del solution[LK.locations][key]
-    return solution
+                locations[key][mkey] = locations[key][mkey] + mval
+            if locations[key][LK.f3100Count] == 0 and locations[key][LK.f9100Count] == 0:
+                del locations[key]
+    if capped:
+        for loc in locations.values():
+            for key, val in loc.items():
+                if val < 0 or val > 5:
+                    loc[key] = min(5, max(0, val))
 
 
 def main(mapName = None):
@@ -181,20 +205,33 @@ def main(mapName = None):
             best_id = score[SK.gameId]
             best_solution = solution
 
+            do_megas = False
             while True:
                 changes = []
-                for change in generate_changes(best_solution, mapEntity):
+                for change in generate_changes(best_solution[LK.locations], mapEntity):
                     changes.append(change)
 
                 calculator = Calculator(mapName, best_solution, mapEntity, generalData)
-                # with Pool(4) as pool:
-                #     scores = pool.map(cc.calculate, changes)
-                scores = list(map(calculator.calculate, changes))
+                with Pool(4) as pool:
+                    scores = pool.map(calculator.calculate, changes)
+                # scores = list(map(calculator.calculate, changes))
                 
+                improvements = []
                 totals = []
-                for score in scores:
+                for i, score in enumerate(scores):
                     total = score[SK.gameScore][SK.total]
+                    improvements.append((total, i))
                     totals.append(total)
+                
+                if do_megas:
+                    megachange = {}
+                    for _, i in improvements:
+                        if totals[i] > best:
+                            apply_change(megachange, changes[i], capped=False)
+                    changes.append(megachange)
+                    megascore = calculator.calculate(megachange)
+                    scores.append(megascore)
+                    totals.append(megascore[SK.gameScore][SK.total])
 
                 total = max(totals)
                 if total > best:
@@ -202,10 +239,13 @@ def main(mapName = None):
                     index = totals.index(total)
                     score = scores[index]
                     best_id = score[SK.gameId]
-                    best_solution = apply_change(best_solution, changes[index])
+                    apply_change(best_solution[LK.locations], changes[index])
                     store(mapName, score)
                 else:
-                    break
+                    if do_megas:
+                        do_megas = False
+                    else:
+                        break
             formatted_best = '{:,}'.format(int(best)).replace(',', ' ')
             print(f'Best: {formatted_best}\t{best_id}')
 
