@@ -9,7 +9,7 @@ from data_keys import (
 )
 
 
-def calculateScore(mapName, solution, mapEntity, generalData):
+def calculateScore(mapName, solution, change, mapEntity, generalData):
     scoredSolution = {
         SK.gameId: str(uuid.uuid4()),
         SK.mapName: mapName,
@@ -24,11 +24,17 @@ def calculateScore(mapName, solution, mapEntity, generalData):
     locationListNoRefillStation = {}
     for key in mapEntity[LK.locations]:
         loc = mapEntity[LK.locations][key]
+        f3_count = 0
+        f9_count = 0
         if key in solution[LK.locations]:
             loc_player = solution[LK.locations][key]
             f3_count = loc_player[LK.f3100Count]
             f9_count = loc_player[LK.f9100Count]
+        if key in change:
+            f3_count += change[key][LK.f3100Count]
+            f9_count += change[key][LK.f9100Count]
 
+        if f3_count > 0 or f9_count > 0:
             scoredSolution[LK.locations][key] = {
                 LK.locationName: loc[LK.locationName],
                 LK.locationType: loc[LK.locationType],
