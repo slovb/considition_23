@@ -144,22 +144,43 @@ def calculateScore(mapName, solution, change, mapEntity, generalData):
     return scoredSolution
 
 
+distance_cache = {}
 def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> int:
-    R = 6371e3
-    φ1 = lat_1 * math.pi / 180  #  φ, λ in radians
-    φ2 = lat_2 * math.pi / 180
-    Δφ = (lat_2 - lat_1) * math.pi / 180
-    Δλ = (long_2 - long_1) * math.pi / 180
+    if ((lat_1, long_1, lat_2, long_2) not in distance_cache):
+        R = 6371e3
+        φ1 = lat_1 * math.pi / 180  #  φ, λ in radians
+        φ2 = lat_2 * math.pi / 180
+        Δφ = (lat_2 - lat_1) * math.pi / 180
+        Δλ = (long_2 - long_1) * math.pi / 180
 
-    a = math.sin(Δφ / 2) * math.sin(Δφ / 2) + math.cos(φ1) * math.cos(φ2) * math.sin(
-        Δλ / 2
-    ) * math.sin(Δλ / 2)
+        a = math.sin(Δφ / 2) * math.sin(Δφ / 2) + math.cos(φ1) * math.cos(φ2) * math.sin(
+            Δλ / 2
+        ) * math.sin(Δλ / 2)
 
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-    d = R * c
+        d = R * c
 
-    return round(d, 0)
+        distance_cache[(lat_1, long_1, lat_2, long_2)] = distance_cache[(lat_2, long_2, lat_1, long_1)] = round(d, 0)
+    return distance_cache[(lat_1, long_1, lat_2, long_2)]
+
+
+# def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> int:
+#     R = 6371e3
+#     φ1 = lat_1 * math.pi / 180  #  φ, λ in radians
+#     φ2 = lat_2 * math.pi / 180
+#     Δφ = (lat_2 - lat_1) * math.pi / 180
+#     Δλ = (long_2 - long_1) * math.pi / 180
+
+#     a = math.sin(Δφ / 2) * math.sin(Δφ / 2) + math.cos(φ1) * math.cos(φ2) * math.sin(
+#         Δλ / 2
+#     ) * math.sin(Δλ / 2)
+
+#     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+#     d = R * c
+
+#     return round(d, 0)
 
 
 def distributeSales(with_, without, generalData):
