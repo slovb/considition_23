@@ -69,8 +69,8 @@ def store(mapName, score):
         f.write(f'{total} {id_}\n')
 
 
-def generate_changes(locations, mapEntity):
-    for key in locations:
+def generate_changes(locations, mapEntity, ignore = set()):
+    for key in (key for key in locations if key not in ignore):
         if locations[key][LK.f3100Count] > 0: # decrease f3100
             yield {
                 key: {
@@ -113,7 +113,7 @@ def generate_changes(locations, mapEntity):
         #             LK.f9100Count: 1,
         #         }
         #     }
-    for key in mapEntity[LK.locations]: # try to add a missing location
+    for key in (key for key in mapEntity[LK.locations] if key not in ignore): # try to add a missing location
         if key not in locations:
             yield {
                 key: {
@@ -198,21 +198,37 @@ def main(mapName = None):
         generalData = getGeneralData(cache_folder)
 
         if mapEntity and generalData:
-            solution = starting_point(mapEntity, generalData)
-            
-            score = calculateScore(mapName, solution, {}, mapEntity, generalData)
-            best = score[SK.gameScore][SK.total]
-            best_id = score[SK.gameId]
+            # solution = starting_point(mapEntity, generalData)
+            # score = calculateScore(mapName, solution, {}, mapEntity, generalData)
+            # best = score[SK.gameScore][SK.total]
+            # best_id = score[SK.gameId]
+
+            solution = {'locations': {}}
+            best = 0
+            best_id = None
             best_solution = solution
 
-            do_megas = False
+            the_good = set()
+            the_bad = set()
+            the_ugly = set()
+
+            do_mega_start = True
+            do_groups = True
+            group_size = 5
+            do_sets = True
             while True:
+                if do_sets:
+                    the_ugly = the_bad.difference(the_good)
+                    the_good = set()
+                else:
+                    the_ugly = set()
+
                 changes = []
-                for change in generate_changes(best_solution[LK.locations], mapEntity):
+                for change in generate_changes(best_solution[LK.locations], mapEntity, ignore = the_ugly):
                     changes.append(change)
 
                 calculator = Calculator(mapName, best_solution, mapEntity, generalData)
-                with Pool(4) as pool:
+                with Pool(8) as pool:
                     scores = pool.map(calculator.calculate, changes)
                 # scores = list(map(calculator.calculate, changes))
                 
@@ -220,19 +236,43 @@ def main(mapName = None):
                 totals = []
                 for i, score in enumerate(scores):
                     total = score[SK.gameScore][SK.total]
-                    improvements.append((total, i))
+                    if total > best:
+                        improvements.append((total, i))
+                        if do_sets:
+                            for key in changes[i]:
+                                the_good.add(key)
+                    elif do_sets:
+                        for key in changes[i]:
+                            the_bad.add(key)
                     totals.append(total)
                 
-                if do_megas:
+                if do_mega_start: # do a megamerge once
                     megachange = {}
                     for _, i in improvements:
-                        if totals[i] > best:
-                            apply_change(megachange, changes[i], capped=False)
+                        apply_change(megachange, changes[i], capped=False)
                     changes.append(megachange)
                     megascore = calculator.calculate(megachange)
                     scores.append(megascore)
                     totals.append(megascore[SK.gameScore][SK.total])
+                    do_mega_start = False
 
+                if len(totals) == 0: # safety 
+                    if do_sets:
+                        do_sets = False
+                        continue
+                    else:
+                        break
+
+                if do_groups and len(improvements) >= group_size: # apply the group_size highest improvements
+                    group_change = {}
+                    for i in sorted(range(len(totals)), key=lambda x: totals[x])[-group_size:]:
+                        apply_change(group_change, changes[i], capped=False)
+                    changes.append(group_change)
+                    group_score = calculator.calculate(group_change)
+                    scores.append(group_score)
+                    totals.append(group_score[SK.gameScore][SK.total])
+
+                # apply the best
                 total = max(totals)
                 if total > best:
                     best = total
@@ -241,11 +281,10 @@ def main(mapName = None):
                     best_id = score[SK.gameId]
                     apply_change(best_solution[LK.locations], changes[index])
                     store(mapName, score)
+                elif do_sets:
+                    do_sets = False
                 else:
-                    if do_megas:
-                        do_megas = False
-                    else:
-                        break
+                    break
             formatted_best = '{:,}'.format(int(best)).replace(',', ' ')
             print(f'Best: {formatted_best}\t{best_id}')
 
