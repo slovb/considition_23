@@ -1,7 +1,7 @@
 import os
 import json
 from scoring import calculateScore
-from api import getGeneralData, getMapData, submit
+from api import getGeneralData, getMapData
 from data_keys import (
     MapNames as MN,
     LocationKeys as LK,
@@ -214,7 +214,7 @@ def main(mapName = None):
 
             do_mega_start = True
             do_groups = True
-            group_size = 5
+            group_size = 16
             do_sets = True
             while True:
                 if do_sets:
@@ -237,7 +237,7 @@ def main(mapName = None):
                 for i, score in enumerate(scores):
                     total = score[SK.gameScore][SK.total]
                     if total > best:
-                        improvements.append((total, i))
+                        improvements.append(i)
                         if do_sets:
                             for key in changes[i]:
                                 the_good.add(key)
@@ -248,7 +248,7 @@ def main(mapName = None):
                 
                 if do_mega_start: # do a megamerge once
                     megachange = {}
-                    for _, i in improvements:
+                    for i in improvements:
                         apply_change(megachange, changes[i], capped=False)
                     changes.append(megachange)
                     megascore = calculator.calculate(megachange)
@@ -263,10 +263,17 @@ def main(mapName = None):
                     else:
                         break
 
-                if do_groups and len(improvements) >= group_size: # apply the group_size highest improvements
+                if do_groups and len(improvements) > 2: # apply the group_size highest improvements that don't intersect
                     group_change = {}
-                    for i in sorted(range(len(totals)), key=lambda x: totals[x])[-group_size:]:
+                    picked = set()
+                    for i in sorted(improvements, key=lambda x: totals[x], reverse=True): # the indexes of the group_size highest totals
+                        if any([key in picked for key in changes[i]]):
+                            continue
+                        for key in changes[i]:
+                            picked.add(key)
                         apply_change(group_change, changes[i], capped=False)
+                        if len(picked) >= group_size:
+                            break
                     changes.append(group_change)
                     group_score = calculator.calculate(group_change)
                     scores.append(group_score)
