@@ -218,18 +218,17 @@ def main(mapName = None):
         generalData = getGeneralData(cache_folder)
 
         if mapEntity and generalData:
-            # solution = starting_point(mapEntity, generalData)
-            # score = calculateScore(mapName, solution, {}, mapEntity, generalData)
-            # best = score[SK.gameScore][SK.total]
-            # best_id = score[SK.gameId]
-
-            solution = {'locations': {}}
+            # best_solution = starting_point(mapEntity, generalData)
+            best_solution = {'locations': {}}
             best = 0
             best_id = None
-            best_solution = solution
-
+            
             calculator = Calculator(mapName, best_solution, mapEntity, generalData)
             calculator.rebuild_distance_cache()
+
+            # score = calculator.calculate(best_solution)
+            # best = score[SK.gameScore][SK.total]
+            # best_id = score[SK.gameId]
 
             the_good = set()
             the_bad = set()
@@ -254,6 +253,7 @@ def main(mapName = None):
                 calculator.solution = best_solution
                 with Pool(4) as pool:
                     scores = pool.map(calculator.calculate, changes)
+
                 # scores = list(map(calculator.calculate, changes))
                 
                 # process scores, extract ids that improved and total scores
@@ -270,7 +270,7 @@ def main(mapName = None):
                         for key in changes[i]:
                             the_bad.add(key)
                     totals.append(total)
-                
+
                 if do_mega_start: # do a megamerge once, merging all improvements
                     megachange = {}
                     for i in improvements:
