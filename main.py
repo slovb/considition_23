@@ -1,10 +1,12 @@
 import os
 import json
-from scoring import calculateScore
+from scoring import calculateScore, distanceBetweenPoint
 from api import getGeneralData, getMapData
 from data_keys import (
     MapNames as MN,
+    CoordinateKeys as CK,
     LocationKeys as LK,
+    GeneralKeys as GK,
     ScoringKeys as SK,
 )
 from multiprocessing import Pool
@@ -23,9 +25,23 @@ class Calculator():
         self.solution = solution
         self.mapEntity = mapEntity
         self.generalData = generalData
+        self.distance_cache = {}
 
     def calculate(self, change):
-        return calculateScore(self.mapName, self.solution, change, self.mapEntity, self.generalData)
+        return calculateScore(self.mapName, self.solution, change, self.mapEntity, self.generalData, self.distance_cache)
+    
+    def build_distance_cache(self):
+        locations = self.mapEntity[LK.locations]
+        lats = []
+        longs = []
+        for location in locations.values():
+            lats.append(location[CK.latitude])
+            longs.append(location[CK.longitude])
+        for i in range(len(lats) - 1):
+            for j in range(i + 1, len(lats)):
+                distance = distanceBetweenPoint(lats[i], longs[i], lats[j], longs[j])
+                if distance < self.generalData[GK.willingnessToTravelInMeters]:
+                    self.distance_cache[(lats[i], longs[i], lats[j], longs[j])] = self.distance_cache[(lats[j], longs[j], lats[i], longs[i])] = distance
 
 
 def starting_point(mapEntity, generalData):
@@ -208,6 +224,9 @@ def main(mapName = None):
             best_id = None
             best_solution = solution
 
+            calculator = Calculator(mapName, best_solution, mapEntity, generalData)
+            calculator.build_distance_cache()
+
             the_good = set()
             the_bad = set()
             the_ugly = set()
@@ -227,7 +246,7 @@ def main(mapName = None):
                 for change in generate_changes(best_solution[LK.locations], mapEntity, ignore = the_ugly):
                     changes.append(change)
 
-                calculator = Calculator(mapName, best_solution, mapEntity, generalData)
+                calculator.solution = best_solution
                 with Pool(8) as pool:
                     scores = pool.map(calculator.calculate, changes)
                 # scores = list(map(calculator.calculate, changes))
