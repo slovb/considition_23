@@ -164,25 +164,10 @@ def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> int:
 
 def distributeSales(with_, without, generalData, distance_cache):
     for key_without in without:
-        distributeSalesTo = {}
+        nearby = distance_cache.get(key_without)
+        distributeSalesTo = {k: d for k, d in nearby.items() if k in with_}
+        
         loc_without = without[key_without]
-
-        for key_with_ in with_:
-            # distance = distanceBetweenPoint(
-            #     loc_without[CK.latitude],
-            #     loc_without[CK.longitude],
-            #     with_[key_with_][CK.latitude],
-            #     with_[key_with_][CK.longitude],
-            # )
-            distance = distance_cache.get((
-                loc_without[CK.latitude],
-                loc_without[CK.longitude],
-                with_[key_with_][CK.latitude],
-                with_[key_with_][CK.longitude],
-            ))
-            # if distance < generalData[GK.willingnessToTravelInMeters]:
-            if distance is not None:
-                distributeSalesTo[with_[key_with_][LK.locationName]] = distance
 
         total = 0
         if distributeSalesTo:

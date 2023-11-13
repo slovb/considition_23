@@ -30,18 +30,22 @@ class Calculator():
     def calculate(self, change):
         return calculateScore(self.mapName, self.solution, change, self.mapEntity, self.generalData, self.distance_cache)
     
-    def build_distance_cache(self):
+    def rebuild_distance_cache(self):
         locations = self.mapEntity[LK.locations]
+        keys = []
         lats = []
         longs = []
-        for location in locations.values():
+        for key, location in locations.items():
+            keys.append(key)
+            self.distance_cache[key] = {}
             lats.append(location[CK.latitude])
             longs.append(location[CK.longitude])
         for i in range(len(lats) - 1):
             for j in range(i + 1, len(lats)):
                 distance = distanceBetweenPoint(lats[i], longs[i], lats[j], longs[j])
                 if distance < self.generalData[GK.willingnessToTravelInMeters]:
-                    self.distance_cache[(lats[i], longs[i], lats[j], longs[j])] = self.distance_cache[(lats[j], longs[j], lats[i], longs[i])] = distance
+                    self.distance_cache[keys[i]][keys[j]] = distance
+                    self.distance_cache[keys[j]][keys[i]] = distance
 
 
 def starting_point(mapEntity, generalData):
@@ -225,47 +229,49 @@ def main(mapName = None):
             best_solution = solution
 
             calculator = Calculator(mapName, best_solution, mapEntity, generalData)
-            calculator.build_distance_cache()
+            calculator.rebuild_distance_cache()
 
             the_good = set()
             the_bad = set()
             the_ugly = set()
 
             do_mega_start = True
+            do_sets = True
             do_groups = True
             group_size = 16
-            do_sets = True
+
             while True:
                 if do_sets:
-                    the_ugly = the_bad.difference(the_good)
+                    the_ugly = the_bad.difference(the_good) # these will be ignored
                     the_good = set()
                 else:
                     the_ugly = set()
 
                 changes = []
-                for change in generate_changes(best_solution[LK.locations], mapEntity, ignore = the_ugly):
+                for change in generate_changes(best_solution[LK.locations], mapEntity, ignore=the_ugly):
                     changes.append(change)
 
                 calculator.solution = best_solution
-                with Pool(8) as pool:
+                with Pool(4) as pool:
                     scores = pool.map(calculator.calculate, changes)
                 # scores = list(map(calculator.calculate, changes))
                 
+                # process scores, extract ids that improved and total scores
                 improvements = []
                 totals = []
                 for i, score in enumerate(scores):
                     total = score[SK.gameScore][SK.total]
-                    if total > best:
+                    if total > best: # improved total
                         improvements.append(i)
                         if do_sets:
                             for key in changes[i]:
                                 the_good.add(key)
-                    elif do_sets:
+                    elif do_sets: # not improved total
                         for key in changes[i]:
                             the_bad.add(key)
                     totals.append(total)
                 
-                if do_mega_start: # do a megamerge once
+                if do_mega_start: # do a megamerge once, merging all improvements
                     megachange = {}
                     for i in improvements:
                         apply_change(megachange, changes[i], capped=False)
@@ -275,7 +281,7 @@ def main(mapName = None):
                     totals.append(megascore[SK.gameScore][SK.total])
                     do_mega_start = False
 
-                if len(totals) == 0: # safety 
+                if len(totals) == 0: # safety check if too much ignoring has happened
                     if do_sets:
                         do_sets = False
                         continue
@@ -298,7 +304,7 @@ def main(mapName = None):
                     scores.append(group_score)
                     totals.append(group_score[SK.gameScore][SK.total])
 
-                # apply the best
+                # apply the best change
                 total = max(totals)
                 if total > best:
                     best = total
