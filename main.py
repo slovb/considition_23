@@ -1,6 +1,6 @@
 import os
 import json
-from scoring import calculateScore, distanceBetweenPoint
+from scoring import distanceBetweenPoint, calculateScore
 from api import getGeneralData, getMapData
 from data_keys import (
     MapNames as MN,
@@ -8,15 +8,16 @@ from data_keys import (
     LocationKeys as LK,
     GeneralKeys as GK,
     ScoringKeys as SK,
+    HotspotKeys as HK,
+    GeneralKeys as GK,
+    CoordinateKeys as CK,
 )
 from multiprocessing import Pool
 from dotenv import load_dotenv
+from settings import Settings
 
 load_dotenv()
 apiKey = os.environ["apiKey"]
-game_folder = "my_games"
-log_folder = "log"
-cache_folder = "cache"
 
 
 class Calculator():
@@ -54,23 +55,31 @@ def starting_point(mapEntity, generalData):
     for key in mapEntity[LK.locations]:
         location = mapEntity[LK.locations][key]
         name = location[LK.locationName]
+        solution[LK.locations][name] = {
+            LK.f3100Count: 1,
+            LK.f9100Count: 0,
+        }
 
-        salesVolume = location[LK.salesVolume]
 
-        cost = 14
-        max_num = 5
-        if salesVolume > cost:
-            f3100Count = int(salesVolume // cost)
-            f9100Count = 0
-            while f3100Count > 4 and f9100Count < max_num:
-                f9100Count += 1
-                f3100Count -= 6
-            f3100Count = max(0, min(5, f3100Count))
-            f9100Count = min(5, f9100Count)
-            solution[LK.locations][name] = {
-                LK.f9100Count: f9100Count,
-                LK.f3100Count: f3100Count,
-            }
+    # for key in mapEntity[LK.locations]:
+    #     location = mapEntity[LK.locations][key]
+    #     name = location[LK.locationName]
+
+    #     salesVolume = location[LK.salesVolume]
+
+    #     cost = 14
+    #     if salesVolume > cost:
+    #         f3100Count = int(salesVolume // cost)
+    #         f9100Count = 0
+    #         while f3100Count > Settings.max_stations-1 and f9100Count < Settings.max_stations:
+    #             f9100Count += 1
+    #             f3100Count -= 6
+    #         f3100Count = max(0, min(Settings.max_stations, f3100Count))
+    #         f9100Count = min(Settings.max_stations, f9100Count)
+    #         solution[LK.locations][name] = {
+    #             LK.f9100Count: f9100Count,
+    #             LK.f3100Count: f3100Count,
+    #         }
     return solution
 
 
@@ -81,10 +90,10 @@ def store(mapName, score):
     print(f'{formatted_total}\t\t{id_}')
 
     # Store solution locally for visualization
-    with open(f"{game_folder}\{id_}.json", "w", encoding="utf8") as f:
+    with open(f"{Settings.game_folder}\{id_}.json", "w", encoding="utf8") as f:
         json.dump(score, f, indent=4)
     # Log solution for easier management
-    with open(f'{log_folder}/{mapName}.txt', 'a', encoding='utf8') as f:
+    with open(f'{Settings.log_folder}/{mapName}.txt', 'a', encoding='utf8') as f:
         total = int(score[SK.gameScore][SK.total])
         f.write(f'{total} {id_}\n')
 
@@ -105,28 +114,28 @@ def generate_changes(locations, mapEntity, ignore = set()):
         #             LK.f9100Count: -1,
         #         }
         #     }
-        if locations[key][LK.f3100Count] > 0 and locations[key][LK.f9100Count] < 5: # f3100 -> f9100
+        if locations[key][LK.f3100Count] > 0 and locations[key][LK.f9100Count] < Settings.max_stations: # f3100 -> f9100
             yield {
                 key: {
                     LK.f3100Count: -1,
                     LK.f9100Count: 1,
                 }
             }
-        if locations[key][LK.f9100Count] > 0 and locations[key][LK.f3100Count] < 5: # f9100 -> f3100
+        if locations[key][LK.f9100Count] > 0 and locations[key][LK.f3100Count] < Settings.max_stations: # f9100 -> f3100
             yield {
                 key: {
                     LK.f3100Count: 1,
                     LK.f9100Count: -1,
                 }
             }
-        if locations[key][LK.f3100Count] < 5: # increase f3100
+        if locations[key][LK.f3100Count] < Settings.max_stations: # increase f3100
             yield {
                 key: {
                     LK.f3100Count: 1,
                     LK.f9100Count: 0,
                 }
             }
-        # if locations[key][LK.f9100Count] < 5: # increase f9100
+        # if locations[key][LK.f9100Count] < Settings.max_stations: # increase f9100
         #     yield {
         #         key: {
         #             LK.f3100Count: 0,
@@ -161,12 +170,12 @@ def apply_change(locations, change, capped=True):
     if capped:
         for loc in locations.values():
             for key, val in loc.items():
-                if val < 0 or val > 5:
-                    loc[key] = min(5, max(0, val))
+                if val < 0 or val > Settings.max_stations:
+                    loc[key] = min(Settings.max_stations, max(0, val))
 
 
 def main(mapName = None):
-    for folder in [game_folder, log_folder, cache_folder]:
+    for folder in [Settings.game_folder, Settings.log_folder, Settings.cache_folder]:
         if not os.path.exists(folder):
             print(f"Creating folder {folder}")
             os.makedirs(folder)    
@@ -187,6 +196,8 @@ def main(mapName = None):
         print(f"7: {MN.london}")
         print(f"8: {MN.berlin}")
         print(f"9: {MN.linkoping}")
+        print(f"10: {MN.sSandbox}")
+        print(f"11: {MN.gSandbox}")
         option_ = input("Select the map you wish to play: ")
 
         match option_:
@@ -208,36 +219,43 @@ def main(mapName = None):
                 mapName = MN.berlin
             case "9":
                 mapName = MN.linkoping
+            case "10":
+                mapName = MN.sSandbox
+            case "11":
+                mapName = MN.gSandbox
             case _:
                 print("Invalid choice.")
 
     if mapName:
         ##Get map data from Considition endpoint
-        mapEntity = getMapData(mapName, apiKey, cache_folder)
+        mapEntity = getMapData(mapName, apiKey, Settings.cache_folder)
         ##Get non map specific data from Considition endpoint
-        generalData = getGeneralData(cache_folder)
+        generalData = getGeneralData(Settings.cache_folder)
 
         if mapEntity and generalData:
-            # best_solution = starting_point(mapEntity, generalData)
-            best_solution = {'locations': {}}
-            best = 0
-            best_id = None
-            
+            if Settings.starting_point == 'func':
+                best_solution = starting_point(mapEntity, generalData)
+            else:
+                best_solution = {'locations': {}}
+
             calculator = Calculator(mapName, best_solution, mapEntity, generalData)
             calculator.rebuild_distance_cache()
 
-            # score = calculator.calculate(best_solution)
-            # best = score[SK.gameScore][SK.total]
-            # best_id = score[SK.gameId]
+            if Settings.starting_point == 'func':
+                score = calculator.calculate(best_solution)
+                best = score[SK.gameScore][SK.total]
+                best_id = score[SK.gameId]
+            else:
+                best = 0
+                best_id = None
 
             the_good = set()
             the_bad = set()
             the_ugly = set()
 
-            do_mega_start = True
-            do_sets = True
-            do_groups = True
-            group_size = 16
+            do_mega = Settings.do_mega
+            mega_count = Settings.mega_count
+            do_sets = Settings.do_sets
 
             while True:
                 if do_sets:
@@ -251,10 +269,11 @@ def main(mapName = None):
                     changes.append(change)
 
                 calculator.solution = best_solution
-                with Pool(4) as pool:
-                    scores = pool.map(calculator.calculate, changes)
-
-                # scores = list(map(calculator.calculate, changes))
+                if Settings.do_multiprocessing:
+                    with Pool(4) as pool:
+                        scores = pool.map(calculator.calculate, changes)
+                else:
+                    scores = list(map(calculator.calculate, changes))
                 
                 # process scores, extract ids that improved and total scores
                 improvements = []
@@ -271,15 +290,16 @@ def main(mapName = None):
                             the_bad.add(key)
                     totals.append(total)
 
-                if do_mega_start: # do a megamerge once, merging all improvements
+                if do_mega and mega_count > 0: # do a megamerge a few times, merging all improvements
                     megachange = {}
+                    # for i in sorted(improvements, key=lambda x: totals[x], reverse=True)[:len(improvements) // 2]:
                     for i in improvements:
                         apply_change(megachange, changes[i], capped=False)
                     changes.append(megachange)
                     megascore = calculator.calculate(megachange)
                     scores.append(megascore)
                     totals.append(megascore[SK.gameScore][SK.total])
-                    do_mega_start = False
+                    mega_count -= 1
 
                 if len(totals) == 0: # safety check if too much ignoring has happened
                     if do_sets:
@@ -288,7 +308,7 @@ def main(mapName = None):
                     else:
                         break
 
-                if do_groups and len(improvements) > 2: # apply the group_size highest improvements that don't intersect
+                if Settings.do_groups and len(improvements) > 2: # apply the group_size highest improvements that don't intersect
                     group_change = {}
                     picked = set()
                     for i in sorted(improvements, key=lambda x: totals[x], reverse=True): # the indexes of the group_size highest totals
@@ -297,7 +317,7 @@ def main(mapName = None):
                         for key in changes[i]:
                             picked.add(key)
                         apply_change(group_change, changes[i], capped=False)
-                        if len(picked) >= group_size:
+                        if len(picked) >= Settings.group_size:
                             break
                     changes.append(group_change)
                     group_score = calculator.calculate(group_change)

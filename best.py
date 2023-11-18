@@ -1,9 +1,9 @@
 import sys
-from main import log_folder
+from settings import Settings
 
 
 def best(mapName):
-    with open(f'{log_folder}/{mapName}.txt', 'r', encoding='utf8') as f:
+    with open(f'{Settings.log_folder}/{mapName}.txt', 'r', encoding='utf8') as f:
         scores = []
         for line in f.readlines():
             parts = line.rstrip().split(' ')

@@ -3,7 +3,7 @@ import sys
 import json
 import api
 from dotenv import load_dotenv
-from main import game_folder, log_folder
+from settings import Settings
 from data_keys import (
     LocationKeys as LK,
     ScoringKeys as SK
@@ -13,7 +13,7 @@ load_dotenv()
 apiKey = os.environ['apiKey']
 
 def load_game(id):
-    with open(f'{game_folder}/{id}.json', 'r', encoding='utf8') as f:
+    with open(f'{Settings.game_folder}/{id}.json', 'r', encoding='utf8') as f:
         return json.load(f)
 
 def get_solution(game):
@@ -38,7 +38,7 @@ def submit(id):
         print(f"Score: {json.dumps(scoredSolution[SK.gameScore], indent=4)}")
         total = scoredSolution[SK.gameScore][SK.total]
         print('Total: {:,}'.format(int(total)))
-        log_file = f'{log_folder}/submit.txt'
+        log_file = f'{Settings.log_folder}/submit.txt'
         with open(log_file, 'a', encoding='utf8') as f:
             f.write(f'{mapName} {total} {id} {game_id}\n')
 
