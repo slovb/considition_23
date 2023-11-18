@@ -10,7 +10,7 @@ class Settings:
     starting_point = 'func'
     do_mega = True
     mega_count = 1
-    do_sets = False
+    do_sets = True
     do_groups = True
     do_multiprocessing = False
     group_size = 16
