@@ -3,18 +3,22 @@ import sys
 import json
 import api
 from dotenv import load_dotenv
-from settings import Settings
+
 from data_keys import (
     LocationKeys as LK,
     ScoringKeys as SK
 )
+from settings import Settings
+
 
 load_dotenv()
 apiKey = os.environ['apiKey']
 
+
 def load_game(id):
     with open(f'{Settings.game_folder}/{id}.json', 'r', encoding='utf8') as f:
         return json.load(f)
+
 
 def get_solution(game):
     locations = {}
@@ -24,6 +28,7 @@ def get_solution(game):
             LK.f9100Count: v[LK.f9100Count],
         }
     return {LK.locations: locations}
+
 
 def submit(id):
     game = load_game(id)
@@ -41,6 +46,7 @@ def submit(id):
         log_file = f'{Settings.log_folder}/submit.txt'
         with open(log_file, 'a', encoding='utf8') as f:
             f.write(f'{mapName} {total} {id} {game_id}\n')
+
 
 if __name__ == '__main__':
     if len(sys.argv) == 2:

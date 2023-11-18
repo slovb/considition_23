@@ -1,178 +1,22 @@
 import os
-import json
-from scoring import distanceBetweenPoint, calculateScore
+from multiprocessing import Pool
+from dotenv import load_dotenv
+
 from api import getGeneralData, getMapData
 from data_keys import (
     MapNames as MN,
-    CoordinateKeys as CK,
     LocationKeys as LK,
-    GeneralKeys as GK,
     ScoringKeys as SK,
-    HotspotKeys as HK,
-    GeneralKeys as GK,
-    CoordinateKeys as CK,
 )
-from multiprocessing import Pool
-from dotenv import load_dotenv
+
+from helper import apply_change, bundle
 from settings import Settings
+from store import store
+from solver import Solver
+
 
 load_dotenv()
 apiKey = os.environ["apiKey"]
-
-
-class Calculator():
-    def __init__(self, mapName, solution, mapEntity, generalData):
-        self.mapName = mapName
-        self.solution = solution
-        self.mapEntity = mapEntity
-        self.generalData = generalData
-        self.distance_cache = {}
-
-    def calculate(self, change):
-        return calculateScore(self.mapName, self.solution, change, self.mapEntity, self.generalData, self.distance_cache)
-    
-    def rebuild_distance_cache(self):
-        locations = self.mapEntity[LK.locations]
-        keys = []
-        lats = []
-        longs = []
-        for key, location in locations.items():
-            keys.append(key)
-            self.distance_cache[key] = {}
-            lats.append(location[CK.latitude])
-            longs.append(location[CK.longitude])
-        for i in range(len(lats) - 1):
-            for j in range(i + 1, len(lats)):
-                distance = distanceBetweenPoint(lats[i], longs[i], lats[j], longs[j])
-                if distance < self.generalData[GK.willingnessToTravelInMeters]:
-                    self.distance_cache[keys[i]][keys[j]] = distance
-                    self.distance_cache[keys[j]][keys[i]] = distance
-
-    def generate_moves(self):
-        locations = self.mapEntity[LK.locations]
-        for main_key in locations:
-            main_location = self.solution[LK.locations].get(main_key)
-            if main_location is not None and main_location[LK.f3100Count] == Settings.max_stations and main_location[LK.f9100Count] == Settings.max_stations:
-                continue
-            nearby = [key for key in self.distance_cache.get(main_key) if key in self.solution[LK.locations]]
-            for sub_key in nearby:
-                sub_loc = self.solution[LK.locations].get(sub_key)
-                changes = []
-                if main_location is None or main_location[LK.f3100Count] < Settings.max_stations:
-                    changes.append(
-                        {
-                            main_key: {
-                                LK.f3100Count: 1,
-                                LK.f9100Count: 0,
-                            }
-                        }
-                    )
-                if main_location is None or main_location[LK.f9100Count] < Settings.max_stations:
-                    changes.append(
-                        {
-                            main_key: {
-                                LK.f3100Count: 0,
-                                LK.f9100Count: 1,
-                            }
-                        }
-                    )
-                if main_location is not None and main_location[LK.f3100Count] > 0 and main_location[LK.f9100Count] < Settings.max_stations:
-                    changes.append(
-                        {
-                            main_key: {
-                                LK.f3100Count: -1,
-                                LK.f9100Count: 1,
-                            }
-                        }
-                    )
-                for change in changes:
-                    if main_location is None or main_location[LK.f3100Count] < Settings.max_stations:
-                        change[main_key] = {
-                            LK.f3100Count: 1,
-                            LK.f9100Count: 0,
-                        }
-                    elif main_location[LK.f3100Count] == Settings.max_stations:
-                        change[main_key] = {
-                            LK.f3100Count: -1,
-                            LK.f9100Count: 1,
-                        }
-
-                    if sub_loc[LK.f3100Count] == 0:
-                        change[sub_key] = {
-                            LK.f3100Count: 1,
-                            LK.f9100Count: -1,
-                        }
-                    else:
-                        change[sub_key] = {
-                            LK.f3100Count: -1,
-                            LK.f9100Count: 0,
-                        }
-                    yield change
-
-    def generate_consolidation(self):
-        locations = self.mapEntity[LK.locations]
-        for main_key in locations:
-            main_location = self.solution[LK.locations].get(main_key)
-            if main_location is not None and main_location[LK.f3100Count] == Settings.max_stations and main_location[LK.f9100Count] == Settings.max_stations:
-                continue
-            nearby = [key for key in self.distance_cache.get(main_key) if key in self.solution[LK.locations]]
-            if len(nearby) < 2:
-                continue
-            for i, sub_1_key in enumerate(nearby[:-1]):
-                sub_1_loc = self.solution[LK.locations].get(sub_1_key)
-                for sub_2_key in nearby[i+1:]:
-                    sub_2_loc = self.solution[LK.locations].get(sub_2_key)
-                    changes = []
-                    if main_location is None or main_location[LK.f3100Count] < Settings.max_stations:
-                        changes.append(
-                            {
-                                main_key: {
-                                    LK.f3100Count: 1,
-                                    LK.f9100Count: 0,
-                                }
-                            }
-                        )
-                    if main_location is None or main_location[LK.f9100Count] < Settings.max_stations:
-                        changes.append(
-                            {
-                                main_key: {
-                                    LK.f3100Count: 0,
-                                    LK.f9100Count: 1,
-                                }
-                            }
-                        )
-                    if main_location is not None and main_location[LK.f3100Count] > 0 and main_location[LK.f9100Count] < Settings.max_stations:
-                        changes.append(
-                            {
-                                main_key: {
-                                    LK.f3100Count: -1,
-                                    LK.f9100Count: 1,
-                                }
-                            }
-                        )
-                    for change in changes:
-                        if sub_1_loc[LK.f3100Count] == 0:
-                            change[sub_1_key] = {
-                                LK.f3100Count: 1,
-                                LK.f9100Count: -1,
-                            }
-                        else:
-                            change[sub_1_key] = {
-                                LK.f3100Count: -1,
-                                LK.f9100Count: 0,
-                            }
-
-                        if sub_2_loc[LK.f3100Count] == 0:
-                            change[sub_2_key] = {
-                                LK.f3100Count: 1,
-                                LK.f9100Count: -1,
-                            }
-                        else:
-                            change[sub_2_key] = {
-                                LK.f3100Count: -1,
-                                LK.f9100Count: 0,
-                            }
-                        yield change
 
 
 def starting_point(mapEntity, generalData):
@@ -181,130 +25,8 @@ def starting_point(mapEntity, generalData):
     for key in mapEntity[LK.locations]:
         location = mapEntity[LK.locations][key]
         name = location[LK.locationName]
-        solution[LK.locations][name] = {
-            LK.f3100Count: 1,
-            LK.f9100Count: 0,
-        }
-
-
-    # for key in mapEntity[LK.locations]:
-    #     location = mapEntity[LK.locations][key]
-    #     name = location[LK.locationName]
-
-    #     salesVolume = location[LK.salesVolume]
-
-    #     cost = 14
-    #     if salesVolume > cost:
-    #         f3100Count = int(salesVolume // cost)
-    #         f9100Count = 0
-    #         while f3100Count > Settings.max_stations-1 and f9100Count < Settings.max_stations:
-    #             f9100Count += 1
-    #             f3100Count -= 6
-    #         f3100Count = max(0, min(Settings.max_stations, f3100Count))
-    #         f9100Count = min(Settings.max_stations, f9100Count)
-    #         solution[LK.locations][name] = {
-    #             LK.f9100Count: f9100Count,
-    #             LK.f3100Count: f3100Count,
-    #         }
+        solution[LK.locations][name] = bundle(1, 0)
     return solution
-
-
-def store(mapName, score):
-    id_ = score[SK.gameId]
-    total = score[SK.gameScore][SK.total]
-    formatted_total = '{:,}'.format(int(total)).replace(',', ' ')
-    print(f'{formatted_total}\t\t{id_}')
-
-    # Store solution locally for visualization
-    with open(f"{Settings.game_folder}\{id_}.json", "w", encoding="utf8") as f:
-        json.dump(score, f, indent=4)
-    # Log solution for easier management
-    with open(f'{Settings.log_folder}/{mapName}.txt', 'a', encoding='utf8') as f:
-        total = int(score[SK.gameScore][SK.total])
-        f.write(f'{total} {id_}\n')
-
-
-def generate_changes(locations, mapEntity, ignore = set()):
-    for key in (key for key in locations if key not in ignore):
-        if locations[key][LK.f3100Count] > 0: # decrease f3100
-            yield {
-                key: {
-                    LK.f3100Count: -1,
-                    LK.f9100Count: 0,
-                }
-            }
-        # if locations[key][LK.f9100Count] > 0: # decrease f9100
-        #     yield {
-        #         key: {
-        #             LK.f3100Count: 0,
-        #             LK.f9100Count: -1,
-        #         }
-        #     }
-        if locations[key][LK.f3100Count] > 0 and locations[key][LK.f9100Count] < Settings.max_stations: # f3100 -> f9100
-            yield {
-                key: {
-                    LK.f3100Count: -1,
-                    LK.f9100Count: 1,
-                }
-            }
-        if locations[key][LK.f3100Count] > 1 and locations[key][LK.f9100Count] < Settings.max_stations: # 2 f3100 -> f9100
-            yield {
-                key: {
-                    LK.f3100Count: -2,
-                    LK.f9100Count: 1,
-                }
-            }
-        if locations[key][LK.f9100Count] > 0 and locations[key][LK.f3100Count] < Settings.max_stations: # f9100 -> f3100
-            yield {
-                key: {
-                    LK.f3100Count: 1,
-                    LK.f9100Count: -1,
-                }
-            }
-        if locations[key][LK.f3100Count] < Settings.max_stations: # increase f3100
-            yield {
-                key: {
-                    LK.f3100Count: 1,
-                    LK.f9100Count: 0,
-                }
-            }
-        # if locations[key][LK.f9100Count] < Settings.max_stations: # increase f9100
-        #     yield {
-        #         key: {
-        #             LK.f3100Count: 0,
-        #             LK.f9100Count: 1,
-        #         }
-        #     }
-    for key in (key for key in mapEntity[LK.locations] if key not in ignore): # try to add a missing location
-        if key not in locations:
-            yield {
-                key: {
-                    LK.f3100Count: 1,
-                    LK.f9100Count: 0,
-                }
-            }
-            # yield {
-            #     key: {
-            #         LK.f3100Count: 0,
-            #         LK.f9100Count: 1,
-            #     }
-            # }
-
-
-def apply_change(locations, change, capped=True):
-    for key, mod in change.items():
-        if key not in locations:
-            locations[key] = mod
-        else:
-            for mkey, mval in mod.items():
-                locations[key][mkey] = locations[key][mkey] + mval
-            if locations[key][LK.f3100Count] == 0 and locations[key][LK.f9100Count] == 0:
-                del locations[key]
-    if capped:
-        for loc in locations.values():
-            for key, val in loc.items():
-                if val < 0 or val > Settings.max_stations:
-                    loc[key] = min(Settings.max_stations, max(0, val))
 
 
 def main(mapName = None):
@@ -371,7 +93,7 @@ def main(mapName = None):
             else:
                 best_solution = {'locations': {}}
 
-            calculator = Calculator(mapName, best_solution, mapEntity, generalData)
+            calculator = Solver(mapName, best_solution, mapEntity, generalData)
             calculator.rebuild_distance_cache()
 
             if Settings.starting_point == 'func':
@@ -403,7 +125,7 @@ def main(mapName = None):
 
                 # generate a set of changes
                 changes = []
-                for change in generate_changes(best_solution[LK.locations], mapEntity, ignore=the_ugly):
+                for change in calculator.generate_changes(ignore=the_ugly):
                     changes.append(change)
                 if stale_progress:
                     for change in calculator.generate_moves():
@@ -491,6 +213,7 @@ def main(mapName = None):
 
             formatted_best = '{:,}'.format(int(best)).replace(',', ' ')
             print(f'Best: {formatted_best}\t{best_id}')
+
 
 if __name__ == "__main__":
     main()

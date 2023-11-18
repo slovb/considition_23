@@ -1,6 +1,8 @@
 import sys
+
 from best import best
 from submit import submit
+
 
 if __name__ == '__main__':
     if len(sys.argv) == 2:

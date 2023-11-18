@@ -1,4 +1,5 @@
 import sys
+
 from settings import Settings
 
 

@@ -1,5 +1,6 @@
 import math
 import uuid
+
 from data_keys import (
     LocationKeys as LK,
     CoordinateKeys as CK,
@@ -9,6 +10,7 @@ from data_keys import (
     MapNames as MN,
     MapKeys as MK,
 )
+
 from settings import Settings
 
 
