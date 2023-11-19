@@ -31,7 +31,10 @@ def apply_change(locations, change, capped=True):
                     locations[key][mkey] = locations[key][mkey] + mval
                 else:
                     locations[key][mkey] = mval
-            if locations[key][LK.f3100Count] == 0 and locations[key][LK.f9100Count] == 0:
+            if (
+                locations[key][LK.f3100Count] == 0
+                and locations[key][LK.f9100Count] == 0
+            ):
                 del locations[key]
     if capped:
         for loc in locations.values():

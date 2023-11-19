@@ -7,7 +7,7 @@ class Settings:
     log_folder = "log"
     game_folder = "my_games"
     max_stations = 2
-    starting_point = 'func'
+    starting_point = "func"
     do_mega = True
     mega_count = 1
     do_sets = True

@@ -12,7 +12,7 @@ from settings import Settings
 from store import store
 
 
-class RegularSolver():
+class RegularSolver:
     def __init__(self, mapName, mapEntity, generalData):
         self.mapName = mapName
         self.mapEntity = mapEntity
@@ -20,17 +20,25 @@ class RegularSolver():
         self.distance_cache = {}
         self.best = 0
         self.best_id = None
-        self.solution = {'locations': {}}
+        self.solution = {"locations": {}}
 
     def calculate(self, change):
-        return calculateScore(self.mapName, self.solution, change, self.mapEntity, self.generalData, self.distance_cache)
-    
+        return calculateScore(
+            self.mapName,
+            self.solution,
+            change,
+            self.mapEntity,
+            self.generalData,
+            self.distance_cache,
+        )
+
     def initialize(self):
-        if Settings.starting_point == 'func':
+        if Settings.starting_point == "func":
             self.solution = self.starting_point()
 
     def starting_point(self):
         from helper import bundle
+
         solution = {LK.locations: {}}
 
         for key in self.mapEntity[LK.locations]:
@@ -56,44 +64,67 @@ class RegularSolver():
                     self.distance_cache[keys[i]][keys[j]] = distance
                     self.distance_cache[keys[j]][keys[i]] = distance
 
-    def generate_changes(self, ignore = set()):
+    def generate_changes(self, ignore=set()):
         locations = self.solution[LK.locations]
         for key in (key for key in locations if key not in ignore):
             location = locations[key]
             f3Count = location[LK.f3100Count]
             f9Count = location[LK.f9100Count]
-            if f3Count > 0: # decrease f3100
-                yield { key: bundle(-1, 0) }
-            if f3Count > 0 and f9Count < Settings.max_stations: # f3100 -> f9100
-                yield { key: bundle(-1, 1) }
-            if f3Count > 1 and f9Count < Settings.max_stations: # 2 f3100 -> f9100
-                yield { key: bundle(-2, 1) }
-            if f9Count > 0 and f3Count < Settings.max_stations: # f9100 -> f3100
-                yield { key: bundle(1, -1) }
-            if f3Count < Settings.max_stations: # increase f3100
-                yield { key: bundle(1, 0) }
-        for key in (key for key in self.mapEntity[LK.locations] if key not in ignore): # try to add a missing location
+            if f3Count > 0:  # decrease f3100
+                yield {key: bundle(-1, 0)}
+            if f3Count > 0 and f9Count < Settings.max_stations:  # f3100 -> f9100
+                yield {key: bundle(-1, 1)}
+            if f3Count > 1 and f9Count < Settings.max_stations:  # 2 f3100 -> f9100
+                yield {key: bundle(-2, 1)}
+            if f9Count > 0 and f3Count < Settings.max_stations:  # f9100 -> f3100
+                yield {key: bundle(1, -1)}
+            if f3Count < Settings.max_stations:  # increase f3100
+                yield {key: bundle(1, 0)}
+        for key in (
+            key for key in self.mapEntity[LK.locations] if key not in ignore
+        ):  # try to add a missing location
             if key not in locations:
-                yield { key: bundle(1, 0) }
+                yield {key: bundle(1, 0)}
 
     def generate_moves(self):
         locations = self.mapEntity[LK.locations]
         for main_key in locations:
             main_location = self.solution[LK.locations].get(main_key)
-            if main_location is not None and main_location[LK.f3100Count] == Settings.max_stations and main_location[LK.f9100Count] == Settings.max_stations:
+            if (
+                main_location is not None
+                and main_location[LK.f3100Count] == Settings.max_stations
+                and main_location[LK.f9100Count] == Settings.max_stations
+            ):
                 continue
-            nearby = [key for key in self.distance_cache.get(main_key) if key in self.solution[LK.locations]]
+            nearby = [
+                key
+                for key in self.distance_cache.get(main_key)
+                if key in self.solution[LK.locations]
+            ]
             for sub_key in nearby:
                 sub_loc = self.solution[LK.locations].get(sub_key)
                 changes = []
-                if main_location is None or main_location[LK.f3100Count] < Settings.max_stations:
-                    changes.append({ main_key: bundle(1, 0) })
-                if main_location is None or main_location[LK.f9100Count] < Settings.max_stations:
-                    changes.append({ main_key: bundle(0, 1) })
-                if main_location is not None and main_location[LK.f3100Count] > 0 and main_location[LK.f9100Count] < Settings.max_stations:
-                    changes.append({ main_key: bundle(-1, 1) })
+                if (
+                    main_location is None
+                    or main_location[LK.f3100Count] < Settings.max_stations
+                ):
+                    changes.append({main_key: bundle(1, 0)})
+                if (
+                    main_location is None
+                    or main_location[LK.f9100Count] < Settings.max_stations
+                ):
+                    changes.append({main_key: bundle(0, 1)})
+                if (
+                    main_location is not None
+                    and main_location[LK.f3100Count] > 0
+                    and main_location[LK.f9100Count] < Settings.max_stations
+                ):
+                    changes.append({main_key: bundle(-1, 1)})
                 for change in changes:
-                    if main_location is None or main_location[LK.f3100Count] < Settings.max_stations:
+                    if (
+                        main_location is None
+                        or main_location[LK.f3100Count] < Settings.max_stations
+                    ):
                         change[main_key] = bundle(1, 0)
                     elif main_location[LK.f3100Count] == Settings.max_stations:
                         change[main_key] = bundle(-1, 1)
@@ -108,22 +139,40 @@ class RegularSolver():
         locations = self.mapEntity[LK.locations]
         for main_key in locations:
             main_location = self.solution[LK.locations].get(main_key)
-            if main_location is not None and main_location[LK.f3100Count] == Settings.max_stations and main_location[LK.f9100Count] == Settings.max_stations:
+            if (
+                main_location is not None
+                and main_location[LK.f3100Count] == Settings.max_stations
+                and main_location[LK.f9100Count] == Settings.max_stations
+            ):
                 continue
-            nearby = [key for key in self.distance_cache.get(main_key) if key in self.solution[LK.locations]]
+            nearby = [
+                key
+                for key in self.distance_cache.get(main_key)
+                if key in self.solution[LK.locations]
+            ]
             if len(nearby) < 2:
                 continue
             for i, sub_1_key in enumerate(nearby[:-1]):
                 sub_1_loc = self.solution[LK.locations].get(sub_1_key)
-                for sub_2_key in nearby[i+1:]:
+                for sub_2_key in nearby[i + 1 :]:
                     sub_2_loc = self.solution[LK.locations].get(sub_2_key)
                     changes = []
-                    if main_location is None or main_location[LK.f3100Count] < Settings.max_stations:
-                        changes.append({ main_key: bundle(1, 0) })
-                    if main_location is None or main_location[LK.f9100Count] < Settings.max_stations:
-                        changes.append({ main_key: bundle(0, 1) })
-                    if main_location is not None and main_location[LK.f3100Count] > 0 and main_location[LK.f9100Count] < Settings.max_stations:
-                        changes.append({ main_key: bundle(-1, 1) })
+                    if (
+                        main_location is None
+                        or main_location[LK.f3100Count] < Settings.max_stations
+                    ):
+                        changes.append({main_key: bundle(1, 0)})
+                    if (
+                        main_location is None
+                        or main_location[LK.f9100Count] < Settings.max_stations
+                    ):
+                        changes.append({main_key: bundle(0, 1)})
+                    if (
+                        main_location is not None
+                        and main_location[LK.f3100Count] > 0
+                        and main_location[LK.f9100Count] < Settings.max_stations
+                    ):
+                        changes.append({main_key: bundle(-1, 1)})
                     for change in changes:
                         if sub_1_loc[LK.f3100Count] == 0:
                             change[sub_1_key] = bundle(1, -1)
@@ -135,9 +184,9 @@ class RegularSolver():
                         else:
                             change[sub_2_key] = bundle(-1, 0)
                         yield change
-    
+
     def solve(self):
-        if Settings.starting_point == 'func':
+        if Settings.starting_point == "func":
             score = self.calculate(self.solution)
             self.best = score[SK.gameScore][SK.total]
             self.best_id = score[SK.gameId]
@@ -154,7 +203,7 @@ class RegularSolver():
 
         while True:
             if do_sets:
-                the_ugly = the_bad.difference(the_good) # these will be ignored
+                the_ugly = the_bad.difference(the_good)  # these will be ignored
                 the_good = set()
             else:
                 the_ugly = set()
@@ -175,23 +224,25 @@ class RegularSolver():
                     scores = pool.map(self.calculate, changes)
             else:
                 scores = list(map(self.calculate, changes))
-            
+
             # process scores, extract ids that improved and total scores
             improvements = []
             totals = []
             for i, score in enumerate(scores):
                 total = score[SK.gameScore][SK.total]
-                if total > self.best: # improved total
+                if total > self.best:  # improved total
                     improvements.append(i)
                     if do_sets:
                         for key in changes[i]:
                             the_good.add(key)
-                elif do_sets: # not improved total
+                elif do_sets:  # not improved total
                     for key in changes[i]:
                         the_bad.add(key)
                 totals.append(total)
 
-            if do_mega and mega_count > 0: # do a megamerge a few times, merging all improvements
+            if (
+                do_mega and mega_count > 0
+            ):  # do a megamerge a few times, merging all improvements
                 megachange = {}
                 # for i in sorted(improvements, key=lambda x: totals[x], reverse=True)[:len(improvements) // 2]:
                 for i in improvements:
@@ -201,17 +252,21 @@ class RegularSolver():
                 scores.append(megascore)
                 totals.append(megascore[SK.gameScore][SK.total])
 
-            if len(totals) == 0: # safety check if too much ignoring has happened
+            if len(totals) == 0:  # safety check if too much ignoring has happened
                 if do_sets:
                     do_sets = False
                     continue
                 else:
                     break
 
-            if Settings.do_groups and len(improvements) > 2: # apply the group_size highest improvements that don't intersect
+            if (
+                Settings.do_groups and len(improvements) > 2
+            ):  # apply the group_size highest improvements that don't intersect
                 group_change = {}
                 picked = set()
-                for i in sorted(improvements, key=lambda x: totals[x], reverse=True): # the indexes of the group_size highest totals
+                for i in sorted(
+                    improvements, key=lambda x: totals[x], reverse=True
+                ):  # the indexes of the group_size highest totals
                     if any([key in picked for key in changes[i]]):
                         continue
                     for key in changes[i]:

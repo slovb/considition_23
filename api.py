@@ -8,9 +8,9 @@ domain = os.environ["domain"]
 
 
 def getMapData(mapName, apiKey, cache_folder):
-    path = f'{cache_folder}/{mapName}.json'
+    path = f"{cache_folder}/{mapName}.json"
     if not os.path.exists(path):
-        print(f'getting map data for {mapName}')
+        print(f"getting map data for {mapName}")
         try:
             resp = requests.get(
                 f"{domain}/api/Game/getMapData?mapName={mapName}",
@@ -21,16 +21,16 @@ def getMapData(mapName, apiKey, cache_folder):
             print(resp)
             return None
         else:
-            with open(path, 'w', encoding='utf8') as f:
+            with open(path, "w", encoding="utf8") as f:
                 json.dump(resp.json(), f, indent=4)
-    with open(path, 'r', encoding='utf8') as f:
+    with open(path, "r", encoding="utf8") as f:
         return json.load(f)
 
 
 def getGeneralData(cache_folder):
-    path = f'{cache_folder}/general.json'
+    path = f"{cache_folder}/general.json"
     if not os.path.exists(path):
-        print('getting general data')
+        print("getting general data")
         try:
             resp = requests.get(f"{domain}/api/Game/getGeneralGameData")
             resp.raise_for_status()
@@ -38,9 +38,9 @@ def getGeneralData(cache_folder):
             print(resp)
             return None
         else:
-            with open(path, 'w', encoding='utf8') as f:
+            with open(path, "w", encoding="utf8") as f:
                 json.dump(resp.json(), f, indent=4)
-    with open(path, 'r', encoding='utf8') as f:
+    with open(path, "r", encoding="utf8") as f:
         return json.load(f)
 
 

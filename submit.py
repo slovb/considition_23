@@ -4,19 +4,16 @@ import json
 import api
 from dotenv import load_dotenv
 
-from data_keys import (
-    LocationKeys as LK,
-    ScoringKeys as SK
-)
+from data_keys import LocationKeys as LK, ScoringKeys as SK
 from settings import Settings
 
 
 load_dotenv()
-apiKey = os.environ['apiKey']
+apiKey = os.environ["apiKey"]
 
 
 def load_game(id):
-    with open(f'{Settings.game_folder}/{id}.json', 'r', encoding='utf8') as f:
+    with open(f"{Settings.game_folder}/{id}.json", "r", encoding="utf8") as f:
         return json.load(f)
 
 
@@ -42,14 +39,14 @@ def submit(id):
         print(f"id: {scoredSolution[SK.gameId]}")
         print(f"Score: {json.dumps(scoredSolution[SK.gameScore], indent=4)}")
         total = scoredSolution[SK.gameScore][SK.total]
-        print('Total: {:,}'.format(int(total)))
-        log_file = f'{Settings.log_folder}/submit.txt'
-        with open(log_file, 'a', encoding='utf8') as f:
-            f.write(f'{mapName} {total} {id} {game_id}\n')
+        print("Total: {:,}".format(int(total)))
+        log_file = f"{Settings.log_folder}/submit.txt"
+        with open(log_file, "a", encoding="utf8") as f:
+            f.write(f"{mapName} {total} {id} {game_id}\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if len(sys.argv) == 2:
         submit(sys.argv[1])
     else:
-        print('Wrong number of arguments')
+        print("Wrong number of arguments")

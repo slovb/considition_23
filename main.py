@@ -16,11 +16,11 @@ load_dotenv()
 apiKey = os.environ["apiKey"]
 
 
-def main(mapName = None):
+def main(mapName=None):
     for folder in [Settings.game_folder, Settings.log_folder, Settings.cache_folder]:
         if not os.path.exists(folder):
             print(f"Creating folder {folder}")
-            os.makedirs(folder)    
+            os.makedirs(folder)
 
     try:
         apiKey = os.environ["apiKey"]
@@ -81,18 +81,18 @@ def main(mapName = None):
                 solver.rebuild_cache()
                 solver.solve()
 
-                formatted_best = '{:,}'.format(int(solver.best)).replace(',', ' ')
-                print(f'Best: {formatted_best}\t{solver.best_id}')
-            else:              
+                formatted_best = "{:,}".format(int(solver.best)).replace(",", " ")
+                print(f"Best: {formatted_best}\t{solver.best_id}")
+            else:
                 solver = RegularSolver(mapName, mapEntity, generalData)
                 solver.initialize()
                 solver.rebuild_cache()
                 solver.solve()
-                
-                formatted_best = '{:,}'.format(int(solver.best)).replace(',', ' ')
-                print(f'Best: {formatted_best}\t{solver.best_id}')
+
+                formatted_best = "{:,}".format(int(solver.best)).replace(",", " ")
+                print(f"Best: {formatted_best}\t{solver.best_id}")
         else:
-            raise SystemExit('ERR Missing data')
+            raise SystemExit("ERR Missing data")
 
 
 if __name__ == "__main__":

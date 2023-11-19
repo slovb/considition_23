@@ -14,7 +14,16 @@ from data_keys import (
 from settings import Settings
 
 
-def calculateScore(mapName, solution, change, mapEntity, generalData, distance_cache, sandbox_names = None, inverse_sandbox_names = None):
+def calculateScore(
+    mapName,
+    solution,
+    change,
+    mapEntity,
+    generalData,
+    distance_cache,
+    sandbox_names=None,
+    inverse_sandbox_names=None,
+):
     scoredSolution = {
         SK.gameId: str(uuid.uuid4()),
         SK.mapName: mapName,
@@ -73,7 +82,7 @@ def calculateScore(mapName, solution, change, mapEntity, generalData, distance_c
                     CK.longitude: loc[CK.longitude],
                     LK.footfall: loc[LK.footfall],
                     LK.salesVolume: loc[LK.salesVolume]
-                     * generalData[GK.refillSalesFactor],
+                    * generalData[GK.refillSalesFactor],
                 }
 
         if not scoredSolution[LK.locations]:
@@ -82,7 +91,10 @@ def calculateScore(mapName, solution, change, mapEntity, generalData, distance_c
             )
 
         scoredSolution[LK.locations] = distributeSales(
-            scoredSolution[LK.locations], locationListNoRefillStation, generalData, distance_cache
+            scoredSolution[LK.locations],
+            locationListNoRefillStation,
+            generalData,
+            distance_cache,
         )
     else:
         sandboxValidation(mapEntity, solution, change, sandbox_names)
@@ -189,7 +201,7 @@ def distributeSales(with_, without, generalData, distance_cache):
     for key_without in without:
         nearby = distance_cache.get(key_without)
         distributeSalesTo = {k: d for k, d in nearby.items() if k in with_}
-        
+
         loc_without = without[key_without]
 
         total = 0
@@ -253,17 +265,23 @@ def getSalesVolume(locationType, generalData):
     return 0
 
 
-def initiateSandboxLocations(locations: list, generalData, solution, change, sandbox_names):
+def initiateSandboxLocations(
+    locations: list, generalData, solution, change, sandbox_names
+):
     def generate_locations():
         for k in solution[LK.locations]:
             yield k
         for k in change:
             if k not in solution[LK.locations]:
                 yield k
+
     def fetch(locKey, key):
         if key in [LK.f3100Count, LK.f9100Count]:
             c = 0
-            if locKey in solution[LK.locations] and key in solution[LK.locations][locKey]:
+            if (
+                locKey in solution[LK.locations]
+                and key in solution[LK.locations][locKey]
+            ):
                 c += solution[LK.locations][locKey][key]
             if locKey in change and key in change[locKey]:
                 c += change[locKey][key]
@@ -315,7 +333,9 @@ def initiateSandboxLocations(locations: list, generalData, solution, change, san
 
 def divideFootfall(locations, generalData, distance_cache, inverse_sandbox_names):
     for key in locations:
-        cache_key = inverse_sandbox_names[key] if inverse_sandbox_names is not None else key
+        cache_key = (
+            inverse_sandbox_names[key] if inverse_sandbox_names is not None else key
+        )
         count = 1 + len([k for k in distance_cache.get(cache_key) if k in locations])
         locations[key][LK.footfall] = locations[key][LK.footfall] / count
 
@@ -381,7 +401,7 @@ def sandboxValidation(mapEntity, request, change, sandbox_names):
             raise SystemExit(
                 f"Latitude is missing or out of bounds for location : {locKey}:{name}"
             )
-        
+
         if locKey in change and CK.longitude in change[locKey]:
             long = change[locKey][CK.longitude]
         else:
@@ -393,7 +413,7 @@ def sandboxValidation(mapEntity, request, change, sandbox_names):
             raise SystemExit(
                 f"Longitude is missing or out of bounds for location : {locKey}:{name}"
             )
-        
+
         # Validate locationType
         if locKey in change and change[locKey][LK.locationType] is not None:
             t = change[locKey][LK.locationType]

@@ -14,9 +14,10 @@ from scoring import distanceBetweenPoint, calculateScore
 from settings import Settings
 from store import store
 
+
 @dataclass
 class KW:
-    limit = 'limit'
+    limit = "limit"
     limits = {
         GK.groceryStoreLarge: 5,
         GK.groceryStore: 20,
@@ -24,7 +25,8 @@ class KW:
         GK.gasStation: 8,
         GK.kiosk: 3,
     }
-    nearby = 'nearby'
+    nearby = "nearby"
+
 
 class SandboxSolver:
     def __init__(self, mapName, mapEntity, generalData):
@@ -37,57 +39,62 @@ class SandboxSolver:
         self.location_type = {}
         self.best = 0
         self.best_id = None
-        self.solution = {'locations': {}}
+        self.solution = {"locations": {}}
 
     def calculate(self, change):
         names = {}
         reverted = {}
+
         def generate_names(solution, change):
             i = 1
             for key in solution[LK.locations]:
-                yield key, f'location{i}'
+                yield key, f"location{i}"
                 i += 1
             for key in change:
                 if key not in solution[LK.locations]:
-                    yield key, f'location{i}'
+                    yield key, f"location{i}"
                     i += 1
+
         for key, name in generate_names(self.solution, change):
             names[key] = name
             reverted[name] = key
-        return calculateScore(self.mapName, self.solution, change, self.mapEntity, self.generalData, self.distance_cache, names, reverted)
-    
+        return calculateScore(
+            self.mapName,
+            self.solution,
+            change,
+            self.mapEntity,
+            self.generalData,
+            self.distance_cache,
+            names,
+            reverted,
+        )
+
     def initialize(self):
         self.location_type = {}
-        for key in [GK.gasStation, GK.groceryStore, GK.groceryStoreLarge, GK.kiosk, GK.convenience]:
+        for key in [
+            GK.gasStation,
+            GK.groceryStore,
+            GK.groceryStoreLarge,
+            GK.kiosk,
+            GK.convenience,
+        ]:
             self.location_type[key] = {
                 GK.type_: self.generalData[GK.locationTypes][key][GK.type_],
                 GK.salesVol: self.generalData[GK.locationTypes][key][GK.salesVol],
-                KW.limit: KW.limits[key]
+                KW.limit: KW.limits[key],
             }
         self.latitudeMax = self.mapEntity[MK.border][MK.latitudeMax]
         self.latitudeMin = self.mapEntity[MK.border][MK.latitudeMin]
         self.longitudeMax = self.mapEntity[MK.border][MK.longitudeMax]
         self.longitudeMin = self.mapEntity[MK.border][MK.longitudeMin]
-        self.lla = lambda la: min(
-            self.latitudeMax,
-            max(
-                self.latitudeMin,
-                la
-            )
-        )
-        self.llo = lambda lo: min(
-            self.longitudeMax,
-            max(
-                self.longitudeMin,
-                lo
-            )
-        )
+        self.lla = lambda la: min(self.latitudeMax, max(self.latitudeMin, la))
+        self.llo = lambda lo: min(self.longitudeMax, max(self.longitudeMin, lo))
 
     def rebuild_cache(self):
         self.rebuild_hotspot_cache()
         self.rebuild_location_candidates()
         self.rebuild_distance_cache()
-    
+
     def rebuild_hotspot_cache(self):
         hotspots = self.mapEntity[HK.hotspots]
         hotspot_cache = {}
@@ -99,7 +106,7 @@ class SandboxSolver:
         for i, i_key in enumerate(keys[:-1]):
             i_lat = hotspot_cache[i_key][CK.latitude]
             i_long = hotspot_cache[i_key][CK.longitude]
-            for j_key in keys[i+1:]:
+            for j_key in keys[i + 1 :]:
                 j_lat = hotspot_cache[j_key][CK.latitude]
                 j_long = hotspot_cache[j_key][CK.longitude]
                 distance = distanceBetweenPoint(i_lat, i_long, j_lat, j_long)
@@ -112,24 +119,26 @@ class SandboxSolver:
         candidates = {}
         i = 1
         taken = set()
+
         def adder(i, latitude, longitude):
             la = self.lla(latitude)
             lo = self.llo(longitude)
             if (la, lo) not in taken:
-                candidates[f'candidate{i}'] = bundle(
+                candidates[f"candidate{i}"] = bundle(
                     latitude=la,
                     longitude=lo,
                 )
                 taken.add((la, lo))
                 return i + 1
             return i
+
         for hotspot in self.hotspot_cache.values():
             hotspot_la = hotspot[CK.latitude]
             hotspot_lo = hotspot[CK.longitude]
             hotspot_w = hotspot[HK.spread] * hotspot[LK.footfall]
             # add the hotspot as a location
             i = adder(i, hotspot_la, hotspot_lo)
-            
+
             # start collecting a cluster node
             cluster_la = hotspot_la * hotspot_w
             cluster_lo = hotspot_lo * hotspot_w
@@ -142,8 +151,12 @@ class SandboxSolver:
                 neighbor_w = neighbor[HK.spread] * neighbor[LK.footfall]
 
                 # add the weighted average of the two points
-                avg_la = (hotspot_la * hotspot_w + neighbor_la * neighbor_w) / (hotspot_w + neighbor_w)
-                avg_lo = (hotspot_lo * hotspot_w + neighbor_lo * neighbor_w) / (hotspot_w + neighbor_w)
+                avg_la = (hotspot_la * hotspot_w + neighbor_la * neighbor_w) / (
+                    hotspot_w + neighbor_w
+                )
+                avg_lo = (hotspot_lo * hotspot_w + neighbor_lo * neighbor_w) / (
+                    hotspot_w + neighbor_w
+                )
                 i = adder(i, avg_la, avg_lo)
 
                 # increase the clusterpoint
@@ -155,7 +168,7 @@ class SandboxSolver:
             cluster_la = cluster_la / cluster_w
             cluster_lo = cluster_lo / cluster_w
             i = adder(i, cluster_la, cluster_lo)
-                
+
         self.location_candidates = candidates
 
     def rebuild_distance_cache(self):
@@ -187,14 +200,14 @@ class SandboxSolver:
                 scores = pool.map(self.calculate, changes)
         else:
             scores = list(map(self.calculate, changes))
-        
+
         # process scores, extract ids that improved and total scores
         totals = []
         for score in scores:
             total = score[SK.gameScore][SK.total]
             # print(total)
             totals.append(total)
-        
+
         # apply the best change
         total = max(totals)
         if total > self.best:
@@ -204,14 +217,16 @@ class SandboxSolver:
             self.best_id = score[SK.gameId]
             apply_change(self.solution[LK.locations], changes[index])
             store(self.mapName, score)
-        
+
     def generate_changes(self):
         # TODO actually consider current solution
         for key, location in self.location_candidates.items():
-            yield { key: bundle(
-                latitude=location[CK.latitude],
-                longitude=location[CK.longitude],
-                type=self.location_type[GK.groceryStoreLarge][GK.type_],
-                f3=1,
-                f9=0,
-            ) }
+            yield {
+                key: bundle(
+                    latitude=location[CK.latitude],
+                    longitude=location[CK.longitude],
+                    type=self.location_type[GK.groceryStoreLarge][GK.type_],
+                    f3=1,
+                    f9=0,
+                )
+            }
