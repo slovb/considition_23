@@ -261,9 +261,10 @@ class RegularSolver:
 
             if (
                 Settings.do_groups and len(improvements) > 2
-            ):  # apply the group_size highest improvements that don't intersect
+            ):  # apply the group_size highest improvements that don't interact
                 group_change = {}
                 picked = set()
+                pick_count = 0
                 for i in sorted(
                     improvements, key=lambda x: totals[x], reverse=True
                 ):  # the indexes of the group_size highest totals
@@ -271,8 +272,12 @@ class RegularSolver:
                         continue
                     for key in changes[i]:
                         picked.add(key)
+                        pick_count += 1
+                        for nkey, distance in self.distance_cache[key].items():
+                            if distance < Settings.groups_distance_limit:
+                                picked.add(nkey)  # don't need nearby
                     apply_change(group_change, changes[i], capped=False)
-                    if len(picked) >= Settings.group_size:
+                    if pick_count >= Settings.group_size:
                         break
                 changes.append(group_change)
                 group_score = self.calculate(group_change)

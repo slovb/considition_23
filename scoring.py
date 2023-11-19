@@ -179,7 +179,7 @@ def calculateScore(
     return scoredSolution
 
 
-def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> int:
+def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> float:
     R = 6371e3
     φ1 = lat_1 * math.pi / 180  #  φ, λ in radians
     φ2 = lat_2 * math.pi / 180
@@ -415,7 +415,7 @@ def sandboxValidation(mapEntity, request, change, sandbox_names):
             )
 
         # Validate locationType
-        if locKey in change and change[locKey][LK.locationType] is not None:
+        if locKey in change and LK.locationType in change[locKey]:
             t = change[locKey][LK.locationType]
         else:
             t = request[LK.locations][locKey][LK.locationType]
