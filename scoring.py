@@ -14,7 +14,7 @@ from data_keys import (
 from settings import Settings
 
 
-def calculateScore(mapName, solution, change, mapEntity, generalData, distance_cache):
+def calculateScore(mapName, solution, change, mapEntity, generalData, distance_cache, sandbox_names = None, inverse_sandbox_names = None):
     scoredSolution = {
         SK.gameId: str(uuid.uuid4()),
         SK.mapName: mapName,
@@ -85,16 +85,16 @@ def calculateScore(mapName, solution, change, mapEntity, generalData, distance_c
             scoredSolution[LK.locations], locationListNoRefillStation, generalData, distance_cache
         )
     else:
-        sandboxValidation(mapEntity, solution)
+        sandboxValidation(mapEntity, solution, change, sandbox_names)
         scoredSolution[LK.locations] = initiateSandboxLocations(
-            scoredSolution[LK.locations], generalData, solution
+            scoredSolution[LK.locations], generalData, solution, change, sandbox_names
         )
         scoredSolution[LK.locations] = calcualteFootfall(
             scoredSolution[LK.locations], mapEntity
         )
 
     scoredSolution[LK.locations] = divideFootfall(
-        scoredSolution[LK.locations], generalData, distance_cache
+        scoredSolution[LK.locations], generalData, distance_cache, inverse_sandbox_names
     )
 
     for key in scoredSolution[LK.locations]:
@@ -253,29 +253,46 @@ def getSalesVolume(locationType, generalData):
     return 0
 
 
-def initiateSandboxLocations(locations: list, generalData, solution):
-    for key in solution[LK.locations]:
-        loc_player = solution[LK.locations][key]
-        sv = getSalesVolume(loc_player[LK.locationType], generalData)
+def initiateSandboxLocations(locations: list, generalData, solution, change, sandbox_names):
+    def generate_locations():
+        for k in solution[LK.locations]:
+            yield k
+        for k in change:
+            if k not in solution[LK.locations]:
+                yield k
+    def fetch(locKey, key):
+        if key in [LK.f3100Count, LK.f9100Count]:
+            c = 0
+            if locKey in solution[LK.locations] and key in solution[LK.locations][locKey]:
+                c += solution[LK.locations][locKey][key]
+            if locKey in change and key in change[locKey]:
+                c += change[locKey][key]
+            return c
+        if locKey in change and key in change[locKey]:
+            return change[locKey][key]
+        return solution[LK.locations][locKey][key]
+
+    for key in generate_locations():
+        sv = getSalesVolume(fetch(key, LK.locationType), generalData)
         scoredSolution = {
             LK.footfall: 0,
-            CK.longitude: loc_player[CK.longitude],
-            CK.latitude: loc_player[CK.latitude],
-            LK.f3100Count: loc_player[LK.f3100Count],
-            LK.f9100Count: loc_player[LK.f9100Count],
-            LK.locationType: loc_player[LK.locationType],
-            LK.locationName: key,
+            CK.longitude: fetch(key, CK.longitude),
+            CK.latitude: fetch(key, CK.latitude),
+            LK.f3100Count: fetch(key, LK.f3100Count),
+            LK.f9100Count: fetch(key, LK.f9100Count),
+            LK.locationType: fetch(key, LK.locationType),
+            LK.locationName: sandbox_names[key],
             LK.salesVolume: sv,
-            LK.salesCapacity: loc_player[LK.f3100Count]
+            LK.salesCapacity: fetch(key, LK.f3100Count)
             * generalData[GK.f3100Data][GK.refillCapacityPerWeek]
-            + loc_player[LK.f9100Count]
+            + fetch(key, LK.f9100Count)
             * generalData[GK.f9100Data][GK.refillCapacityPerWeek],
-            LK.leasingCost: loc_player[LK.f3100Count]
+            LK.leasingCost: fetch(key, LK.f3100Count)
             * generalData[GK.f3100Data][GK.leasingCostPerWeek]
-            + loc_player[LK.f9100Count]
+            + fetch(key, LK.f9100Count)
             * generalData[GK.f9100Data][GK.leasingCostPerWeek],
         }
-        locations[key] = scoredSolution
+        locations[sandbox_names[key]] = scoredSolution
 
     for key in locations:
         count = 1
@@ -296,15 +313,16 @@ def initiateSandboxLocations(locations: list, generalData, solution):
     return locations
 
 
-def divideFootfall(locations, generalData, distance_cache):
+def divideFootfall(locations, generalData, distance_cache, inverse_sandbox_names):
     for key in locations:
-        count = 1 + len([k for k in distance_cache.get(key) if k in locations])
+        cache_key = inverse_sandbox_names[key] if inverse_sandbox_names is not None else key
+        count = 1 + len([k for k in distance_cache.get(cache_key) if k in locations])
         locations[key][LK.footfall] = locations[key][LK.footfall] / count
 
     return locations
 
 
-def sandboxValidation(mapEntity, request):
+def sandboxValidation(mapEntity, request, change, sandbox_names):
     countGroceryStoreLarge = 0
     countGroceryStore = 0
     countConvenience = 0
@@ -326,12 +344,20 @@ def sandboxValidation(mapEntity, request):
 
     numberErrorMsg = f"locationName needs to start with 'location' and followed with a number larger than 0 and less than {totalStores + 1}."
 
-    for locKey in request[LK.locations]:
+    def generate_locations():
+        for k in request[LK.locations]:
+            yield k
+        for k in change:
+            if k not in request[LK.locations]:
+                yield k
+
+    for locKey in generate_locations():
         # Validate location name
-        if str(locKey).startswith("location") == False:
-            raise SystemExit(f"{numberErrorMsg} {locKey} is not a valid name")
-        loc_num = locKey[8:]
-        if not locKey:
+        name = sandbox_names[locKey]
+        if str(name).startswith("location") == False:
+            raise SystemExit(f"{numberErrorMsg} {locKey}:{name} is not a valid name")
+        loc_num = name[8:]
+        if not name:
             raise SystemExit(
                 f"{numberErrorMsg} Nothing followed location in the locationName"
             )
@@ -344,29 +370,37 @@ def sandboxValidation(mapEntity, request):
             raise SystemExit(f"{numberErrorMsg} {loc_num} is not a number")
 
         # Validate long and lat
+        if locKey in change and CK.latitude in change[locKey]:
+            lat = change[locKey][CK.latitude]
+        else:
+            lat = request[LK.locations][locKey][CK.latitude]
         if (
-            mapEntity[MK.border][MK.latitudeMin]
-            > request[LK.locations][locKey][CK.latitude]
-            or mapEntity[MK.border][MK.latitudeMax]
-            < request[LK.locations][locKey][CK.latitude]
+            mapEntity[MK.border][MK.latitudeMin] > lat
+            or mapEntity[MK.border][MK.latitudeMax] < lat
         ):
             raise SystemExit(
-                f"Latitude is missing or out of bounds for location : {locKey}"
+                f"Latitude is missing or out of bounds for location : {locKey}:{name}"
             )
+        
+        if locKey in change and CK.longitude in change[locKey]:
+            long = change[locKey][CK.longitude]
+        else:
+            long = request[LK.locations][locKey][CK.longitude]
         if (
-            mapEntity[MK.border][MK.longitudeMin]
-            > request[LK.locations][locKey][CK.longitude]
-            or mapEntity[MK.border][MK.longitudeMax]
-            < request[LK.locations][locKey][CK.longitude]
+            mapEntity[MK.border][MK.longitudeMin] > long
+            or mapEntity[MK.border][MK.longitudeMax] < long
         ):
             raise SystemExit(
-                f"Longitude is missing or out of bounds for location : {locKey}"
+                f"Longitude is missing or out of bounds for location : {locKey}:{name}"
             )
+        
         # Validate locationType
-
-        t = request[LK.locations][locKey][LK.locationType]
+        if locKey in change and change[locKey][LK.locationType] is not None:
+            t = change[locKey][LK.locationType]
+        else:
+            t = request[LK.locations][locKey][LK.locationType]
         if not t:
-            raise SystemExit(f"locationType is missing for location) : {locKey}")
+            raise SystemExit(f"locationType is missing for location) : {locKey}:{name}")
         elif t == "Grocery-store-large":
             countGroceryStoreLarge += 1
         elif t == "Grocery-store":
@@ -379,7 +413,7 @@ def sandboxValidation(mapEntity, request):
             countKiosk += 1
         else:
             raise SystemExit(
-                f"locationType --> {t} not valid (check GetGeneralGameData for correct values) for location : {locKey}"
+                f"locationType --> {t} not valid (check GetGeneralGameData for correct values) for location : {locKey}:{name}"
             )
         # Validate that max number of location is not exceeded
         if (

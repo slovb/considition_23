@@ -1,27 +1,45 @@
+from multiprocessing import Pool
+
 from data_keys import (
     CoordinateKeys as CK,
     LocationKeys as LK,
     GeneralKeys as GK,
-    GeneralKeys as GK,
-    CoordinateKeys as CK,
+    ScoringKeys as SK,
 )
-from helper import bundle
+from helper import apply_change, bundle
 from scoring import distanceBetweenPoint, calculateScore
 from settings import Settings
+from store import store
 
 
-class Solver():
-    def __init__(self, mapName, solution, mapEntity, generalData):
+class RegularSolver():
+    def __init__(self, mapName, mapEntity, generalData):
         self.mapName = mapName
-        self.solution = solution
         self.mapEntity = mapEntity
         self.generalData = generalData
         self.distance_cache = {}
+        self.best = 0
+        self.best_id = None
+        self.solution = {'locations': {}}
 
     def calculate(self, change):
         return calculateScore(self.mapName, self.solution, change, self.mapEntity, self.generalData, self.distance_cache)
     
-    def rebuild_distance_cache(self):
+    def initialize(self):
+        if Settings.starting_point == 'func':
+            self.solution = self.starting_point()
+
+    def starting_point(self):
+        from helper import bundle
+        solution = {LK.locations: {}}
+
+        for key in self.mapEntity[LK.locations]:
+            location = self.mapEntity[LK.locations][key]
+            name = location[LK.locationName]
+            solution[LK.locations][name] = bundle(f3=1, f9=0)
+        return solution
+
+    def rebuild_cache(self):
         locations = self.mapEntity[LK.locations]
         keys = []
         lats = []
@@ -117,3 +135,114 @@ class Solver():
                         else:
                             change[sub_2_key] = bundle(-1, 0)
                         yield change
+    
+    def solve(self):
+        if Settings.starting_point == 'func':
+            score = self.calculate(self.solution)
+            self.best = score[SK.gameScore][SK.total]
+            self.best_id = score[SK.gameId]
+
+        the_good = set()
+        the_bad = set()
+        the_ugly = set()
+
+        do_mega = Settings.do_mega
+        mega_count = Settings.mega_count
+        do_sets = Settings.do_sets
+
+        stale_progress = False
+
+        while True:
+            if do_sets:
+                the_ugly = the_bad.difference(the_good) # these will be ignored
+                the_good = set()
+            else:
+                the_ugly = set()
+
+            # generate a set of changes
+            changes = []
+            for change in self.generate_changes(ignore=the_ugly):
+                changes.append(change)
+            if stale_progress:
+                for change in self.generate_moves():
+                    changes.append(change)
+                for change in self.generate_consolidation():
+                    changes.append(change)
+
+            # score changes
+            if Settings.do_multiprocessing:
+                with Pool(4) as pool:
+                    scores = pool.map(self.calculate, changes)
+            else:
+                scores = list(map(self.calculate, changes))
+            
+            # process scores, extract ids that improved and total scores
+            improvements = []
+            totals = []
+            for i, score in enumerate(scores):
+                total = score[SK.gameScore][SK.total]
+                if total > self.best: # improved total
+                    improvements.append(i)
+                    if do_sets:
+                        for key in changes[i]:
+                            the_good.add(key)
+                elif do_sets: # not improved total
+                    for key in changes[i]:
+                        the_bad.add(key)
+                totals.append(total)
+
+            if do_mega and mega_count > 0: # do a megamerge a few times, merging all improvements
+                megachange = {}
+                # for i in sorted(improvements, key=lambda x: totals[x], reverse=True)[:len(improvements) // 2]:
+                for i in improvements:
+                    apply_change(megachange, changes[i], capped=False)
+                changes.append(megachange)
+                megascore = self.calculate(megachange)
+                scores.append(megascore)
+                totals.append(megascore[SK.gameScore][SK.total])
+
+            if len(totals) == 0: # safety check if too much ignoring has happened
+                if do_sets:
+                    do_sets = False
+                    continue
+                else:
+                    break
+
+            if Settings.do_groups and len(improvements) > 2: # apply the group_size highest improvements that don't intersect
+                group_change = {}
+                picked = set()
+                for i in sorted(improvements, key=lambda x: totals[x], reverse=True): # the indexes of the group_size highest totals
+                    if any([key in picked for key in changes[i]]):
+                        continue
+                    for key in changes[i]:
+                        picked.add(key)
+                    apply_change(group_change, changes[i], capped=False)
+                    if len(picked) >= Settings.group_size:
+                        break
+                changes.append(group_change)
+                group_score = self.calculate(group_change)
+                scores.append(group_score)
+                totals.append(group_score[SK.gameScore][SK.total])
+
+            # apply the best change
+            total = max(totals)
+            if total > self.best:
+                self.best = total
+                index = totals.index(total)
+                score = scores[index]
+                self.best_id = score[SK.gameId]
+                apply_change(self.solution[LK.locations], changes[index])
+                store(self.mapName, score)
+                stale_progress = False
+            elif do_mega and mega_count > 0:
+                mega_count = 0
+            elif do_sets:
+                do_sets = False
+            elif not stale_progress:
+                stale_progress = True
+            else:
+                break
+
+            # post
+            if do_mega and mega_count > 0:
+                mega_count -= 1
