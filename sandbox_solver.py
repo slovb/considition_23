@@ -122,11 +122,11 @@ class SandboxSolver:
         i = 1
         taken = set()
 
-        def adder(i, latitude, longitude):
+        def adder(i, latitude, longitude, name):
             la = self.lla(latitude)
             lo = self.llo(longitude)
             if (la, lo) not in taken:
-                candidates[f"candidate{i}"] = bundle(
+                candidates[f"c_{name}_{i}"] = bundle(
                     latitude=la,
                     longitude=lo,
                 )
@@ -139,7 +139,7 @@ class SandboxSolver:
             hotspot_lo = hotspot[CK.longitude]
             hotspot_w = hotspot[HK.spread] * hotspot[LK.footfall]
             # add the hotspot as a location
-            i = adder(i, hotspot_la, hotspot_lo)
+            i = adder(i, hotspot_la, hotspot_lo, "hotspot")
 
             # start collecting a cluster node
             cluster_la = hotspot_la * hotspot_w
@@ -159,7 +159,7 @@ class SandboxSolver:
                 avg_lo = (hotspot_lo * hotspot_w + neighbor_lo * neighbor_w) / (
                     hotspot_w + neighbor_w
                 )
-                i = adder(i, avg_la, avg_lo)
+                i = adder(i, avg_la, avg_lo, "between")
 
                 # increase the clusterpoint
                 cluster_la += neighbor_la * neighbor_w
@@ -169,7 +169,7 @@ class SandboxSolver:
             # add the clusterpoint
             cluster_la = cluster_la / cluster_w
             cluster_lo = cluster_lo / cluster_w
-            i = adder(i, cluster_la, cluster_lo)
+            i = adder(i, cluster_la, cluster_lo, "cluster")
 
         print(f"{len(candidates)} candidates, remove near nodes later")
         self.location_candidates = candidates
@@ -218,6 +218,7 @@ class SandboxSolver:
                 stale_progress = True
             else:
                 break
+            print("-" * 80)
 
     def add_location(self, the_good, the_bad, ignore):
         print(f"len ignore {len(ignore)}")
@@ -256,7 +257,7 @@ class SandboxSolver:
         for i in sorted(range(len(changes)), key=lambda x: totals[x], reverse=True):
             change = changes[i]
             for type in remaining_types:
-                for f_count in [(1, 0), (0, 1), (0, Settings.max_stations)]:
+                for f_count in [(1, 0), (0, 1), (1, 1)]:
                     suggestion = {}
                     for loc_key, location in change.items():
                         if (
@@ -453,6 +454,8 @@ class SandboxSolver:
                 yield {key: bundle(1, -1)}
             if f3Count < Settings.max_stations:  # increase f3100
                 yield {key: bundle(1, 0)}
+            if f9Count < Settings.max_stations:  # increase f9100
+                yield {key: bundle(0, 1)}
 
     def generate_moves(self):
         locations = self.solution[LK.locations]

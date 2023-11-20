@@ -31,14 +31,19 @@ def apply_change(locations, change, capped=True):
                     locations[key][mkey] = locations[key][mkey] + mval
                 else:
                     locations[key][mkey] = mval
-            if (
-                locations[key][LK.f3100Count] == 0
-                and locations[key][LK.f9100Count] == 0
-            ):
-                del locations[key]
+            # if (
+            #     locations[key][LK.f3100Count] == 0
+            #     and locations[key][LK.f9100Count] == 0
+            # ):
+            #     del locations[key]
     if capped:
-        for loc in locations.values():
+        to_remove = []
+        for loc_key, loc in locations.items():
             for key, val in loc.items():
                 if key in [LK.f3100Count, LK.f9100Count]:
                     if val < 0 or val > Settings.max_stations:
                         loc[key] = min(Settings.max_stations, max(0, val))
+            if loc[LK.f3100Count] == 0 and loc[LK.f9100Count] == 0:
+                to_remove.append(loc_key)
+        for key in to_remove:
+            del locations[key]

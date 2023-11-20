@@ -18,7 +18,7 @@ class Settings:
     group_size = 16
     groups_distance_limit = 100.0
 
-    sandbox_explore_how_many = 32
+    sandbox_explore_how_many = 16
     do_sandbox_groups = True
     sandbox_group_size = 3
     sandbox_groups_distance_limit = 100.0
