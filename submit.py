@@ -4,7 +4,12 @@ import json
 import api
 from dotenv import load_dotenv
 
-from data_keys import LocationKeys as LK, ScoringKeys as SK
+from data_keys import (
+    LocationKeys as LK,
+    ScoringKeys as SK,
+    MapNames as MN,
+    CoordinateKeys as CK,
+)
 from settings import Settings
 
 
@@ -19,11 +24,20 @@ def load_game(id):
 
 def get_solution(game):
     locations = {}
+    mapName = game[SK.mapName]
+
     for k, v in game[LK.locations].items():
+        if v[LK.f3100Count] == 0 and v[LK.f9100Count] == 0:
+            continue
         locations[k] = {
             LK.f3100Count: v[LK.f3100Count],
             LK.f9100Count: v[LK.f9100Count],
         }
+        if mapName in [MN.gSandbox, MN.sSandbox]:
+            locations[k][LK.locationType] = v[LK.locationType]
+            locations[k][CK.latitude] = v[CK.latitude]
+            locations[k][CK.longitude] = v[CK.longitude]
+
     return {LK.locations: locations}
 
 
