@@ -22,6 +22,7 @@ class RegularSolver:
         self.mapEntity = mapEntity
         self.generalData = generalData
         self.distance_cache = {}
+        self.location_type = {}
         self.best = 0
         self.best_id = None
         self.solution = {"locations": {}}
@@ -37,6 +38,15 @@ class RegularSolver:
         )
 
     def initialize(self):
+        self.location_type = {}
+        for key in [
+            GK.gasStation,
+            GK.groceryStore,
+            GK.groceryStoreLarge,
+            GK.kiosk,
+            GK.convenience,
+        ]:
+            self.location_type[key] = self.generalData[GK.locationTypes][key][GK.type_]
         if Settings.starting_point == "func":
             self.solution = self.starting_point()
 
@@ -48,7 +58,13 @@ class RegularSolver:
         for key in self.mapEntity[LK.locations]:
             location = self.mapEntity[LK.locations][key]
             name = location[LK.locationName]
-            solution[LK.locations][name] = bundle(f3=1, f9=0)
+            type = location[LK.locationType]
+            f3 = 1
+            f9 = 0
+            if type == self.location_type[GK.groceryStoreLarge]:
+                f3 = 1
+                f9 = 1
+            solution[LK.locations][name] = bundle(f3=f3, f9=f9)
         return solution
 
     def rebuild_cache(self):

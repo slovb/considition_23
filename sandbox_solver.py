@@ -12,6 +12,7 @@ from data_keys import (
 )
 from helper import apply_change, bundle
 from scoring import distanceBetweenPoint, calculateScore
+from original_scoring import calculateScore as originalCalculateScore
 from settings import Settings
 from store import store
 
@@ -45,10 +46,11 @@ class SandboxSolver:
         self.best = 0
         self.best_id = None
         self.solution = {"locations": {}}
+        self.no_remove = False
 
     def calculate(self, change, skip_validation=True):
         names = {}
-        reverted = {}
+        inverse = {}
 
         def generate_names(solution, change):
             i = 1
@@ -62,7 +64,7 @@ class SandboxSolver:
 
         for key, name in generate_names(self.solution, change):
             names[key] = name
-            reverted[name] = key
+            inverse[name] = key
         return calculateScore(
             self.mapName,
             self.solution,
@@ -71,8 +73,27 @@ class SandboxSolver:
             self.generalData,
             self.distance_cache,
             names,
-            reverted,
+            inverse,
             skip_validation=skip_validation,
+        )
+
+    def calculate_verification(self):
+        solution = {LK.locations: {}}
+        i = 1
+        fields = [
+            LK.f3100Count,
+            LK.f9100Count,
+            CK.latitude,
+            CK.longitude,
+            LK.locationType,
+        ]
+        for location in self.solution[LK.locations].values():
+            solution[LK.locations][f"location{i}"] = {
+                field: location[field] for field in fields
+            }
+            i += 1
+        return originalCalculateScore(
+            self.mapName, solution, self.mapEntity, self.generalData
         )
 
     def initialize(self):
@@ -84,11 +105,7 @@ class SandboxSolver:
             GK.kiosk,
             GK.convenience,
         ]:
-            self.location_type[key] = {
-                GK.type_: self.generalData[GK.locationTypes][key][GK.type_],
-                GK.salesVol: self.generalData[GK.locationTypes][key][GK.salesVol],
-                KW.limit: KW.limits[key],
-            }
+            self.location_type[key] = self.generalData[GK.locationTypes][key][GK.type_]
         self.latitudeMax = self.mapEntity[MK.border][MK.latitudeMax]
         self.latitudeMin = self.mapEntity[MK.border][MK.latitudeMin]
         self.longitudeMax = self.mapEntity[MK.border][MK.longitudeMax]
@@ -233,8 +250,10 @@ class SandboxSolver:
 
             #
             self.add_location(the_good=the_good, the_bad=the_bad, ignore=the_ugly)
-            if stale_progress:
-                self.tweak_locations(stale_progress=stale_progress)
+            # nr = self.no_remove
+            # self.no_remove = False
+            self.tweak_locations(stale_progress=stale_progress)
+            # self.no_remove = nr
             if self.best > old_best:
                 old_best = self.best
                 stale_progress = False
@@ -251,6 +270,8 @@ class SandboxSolver:
         remaining_types = self.remaining_types_in_order()
         if len(remaining_types) == 0:
             return
+        elif len(remaining_types) == 1:
+            self.no_remove = True  # get those last kiosks
 
         # try to add locations
         changes = []
@@ -266,6 +287,7 @@ class SandboxSolver:
 
         # process scores, extract ids that improved and total scores
         totals = []
+        extra_data = []
         for i, score in enumerate(scores):
             total = score[SK.gameScore][SK.total]
             if total > self.best:
@@ -275,34 +297,36 @@ class SandboxSolver:
                 for key in changes[i]:
                     the_bad.add(key)
             totals.append(total)
+            extra_data.append(score[SK.gameScore][SK.earnings])
         print(len(the_good), len(the_bad))
 
         # try adjustments of the best additions
         suggestions = []
         adjust_how_many = Settings.sandbox_explore_how_many
-        for i in sorted(range(len(changes)), key=lambda x: totals[x], reverse=True):
-            change = changes[i]
-            for type in remaining_types:
-                for f_count in [(1, 0), (0, 1), (1, 1)]:
-                    suggestion = {}
-                    for loc_key, location in change.items():
-                        if (
-                            type == location[LK.locationType]
-                            and f_count[0] == location[LK.f3100Count]
-                            and f_count[1] == location[LK.f9100Count]
-                        ):  # no repeats
-                            continue
-                        suggestion[loc_key] = bundle(
-                            latitude=location[CK.latitude],
-                            longitude=location[CK.longitude],
-                            type=type,
-                            f3=f_count[0],
-                            f9=f_count[1],
-                        )
-                    suggestions.append(suggestion)
-            adjust_how_many -= 1
-            if adjust_how_many <= 0:
-                break
+        if adjust_how_many > 0:
+            for i in sorted(range(len(changes)), key=lambda x: totals[x], reverse=True):
+                change = changes[i]
+                for type in remaining_types:
+                    for f_count in [(1, 0), (0, 1), (1, 1)]:
+                        suggestion = {}
+                        for loc_key, location in change.items():
+                            if (
+                                type == location[LK.locationType]
+                                and f_count[0] == location[LK.f3100Count]
+                                and f_count[1] == location[LK.f9100Count]
+                            ):  # no repeats
+                                continue
+                            suggestion[loc_key] = bundle(
+                                latitude=location[CK.latitude],
+                                longitude=location[CK.longitude],
+                                type=type,
+                                f3=f_count[0],
+                                f9=f_count[1],
+                            )
+                        suggestions.append(suggestion)
+                adjust_how_many -= 1
+                if adjust_how_many <= 0:
+                    break
 
         # merge and process suggestions into the state
         for suggestion in suggestions:
@@ -310,6 +334,7 @@ class SandboxSolver:
             score = self.calculate(suggestion)
             scores.append(score)
             totals.append(score[SK.gameScore][SK.total])
+            extra_data.append(score[SK.gameScore][SK.earnings])
 
         if (
             Settings.do_sandbox_groups
@@ -343,7 +368,9 @@ class SandboxSolver:
                     for nkey, distance in self.distance_cache[key].items():
                         if distance < Settings.sandbox_groups_distance_limit:
                             picked.add(nkey)  # don't need nearby
-                apply_change(group_change, changes[i], capped=False)
+                apply_change(
+                    group_change, changes[i], capped=False, no_remove=self.no_remove
+                )
                 if pick_count >= Settings.sandbox_group_size:
                     # grabbed enough locations
                     break
@@ -359,6 +386,7 @@ class SandboxSolver:
                 # print("=" * 80)
                 scores.append(group_score)
                 totals.append(group_score[SK.gameScore][SK.total])
+                extra_data.append(score[SK.gameScore][SK.earnings])
 
         if len(totals) == 0:  # safety check due to ignore
             return
@@ -368,11 +396,19 @@ class SandboxSolver:
         if total >= self.best:
             self.best = total
             index = totals.index(total)
+            print(extra_data[index], max(extra_data), min(extra_data))
             score = scores[index]
             self.best_id = score[SK.gameId]
-            apply_change(self.solution[LK.locations], changes[index])
+            apply_change(
+                self.solution[LK.locations], changes[index], no_remove=self.no_remove
+            )
             print(f"addition: {json.dumps(changes[index], indent=4)}")
             store(self.mapName, score)
+            verification = self.calculate_verification()
+            ver_total = verification[SK.gameScore][SK.total]
+            print(f"verification total {ver_total}")
+            if ver_total != round(total, 2):
+                raise SystemExit(f"!!!!!! {round(total, 2)}")
             self.update_limits()
             for key in changes[index]:
                 nearby = self.distance_cache[key]
@@ -387,7 +423,10 @@ class SandboxSolver:
         changes = []
         for change in self.generate_changes():
             changes.append(change)
-        # if stale_progress:
+        if stale_progress:
+            map(changes.append, self.generate_swaps())
+        # for change in self.generate_swaps():
+        #     changes.append(change)
         #     for change in self.generate_moves():
         #         changes.append(change)
         #     for change in self.generate_consolidation():
@@ -421,7 +460,9 @@ class SandboxSolver:
                     continue
                 for key in changes[i]:
                     picked.add(key)
-                apply_change(group_change, changes[i], capped=False)
+                apply_change(
+                    group_change, changes[i], capped=False, no_remove=self.no_remove
+                )
                 if len(picked) >= Settings.group_size:
                     break
             changes.append(group_change)
@@ -436,7 +477,9 @@ class SandboxSolver:
             index = totals.index(total)
             score = scores[index]
             self.best_id = score[SK.gameId]
-            apply_change(self.solution[LK.locations], changes[index])
+            apply_change(
+                self.solution[LK.locations], changes[index], no_remove=self.no_remove
+            )
             print(f"tweak: {json.dumps(changes[index], indent=4)}")
             store(self.mapName, score)
         else:
@@ -454,18 +497,15 @@ class SandboxSolver:
         )
         f3 = 1
         f9 = 0
-        if type == self.location_type[GK.groceryStoreLarge][GK.type_]:
-            f3 = 0
-            f9 = 2
-        elif type == self.location_type[GK.groceryStore][GK.type_]:
+        if type == self.location_type[GK.groceryStoreLarge]:
+            f3 = 1
+            f9 = 1
+        elif type == self.location_type[GK.groceryStore]:
             f3 = 0
             f9 = 1
-        elif type == self.location_type[GK.kiosk][GK.type_]:
+        elif type == self.location_type[GK.kiosk]:
             f3 = 0
             f9 = 0
-            candidates = (
-                (key, location) for key, location in self.location_candidates.items()
-            )
         for key, location in candidates:
             if key in self.solution:
                 continue
@@ -496,6 +536,23 @@ class SandboxSolver:
                 yield {key: bundle(1, 0)}
             if f9Count < Settings.max_stations:  # increase f9100
                 yield {key: bundle(0, 1)}
+
+    def generate_swaps(self):
+        locations = self.solution[LK.locations]
+        largeType = self.location_type[GK.groceryStoreLarge]
+        for key, location in locations.items():
+            if location[LK.locationType] == largeType:
+                for k2, l2 in locations.items():
+                    if l2[LK.locationType] != largeType:
+                        yield {
+                            key: bundle(
+                                latitude=l2[CK.latitude], longitude=l2[CK.longitude]
+                            ),
+                            k2: bundle(
+                                latitude=location[CK.latitude],
+                                longitude=location[CK.longitude],
+                            ),
+                        }
 
     def generate_moves(self):
         locations = self.solution[LK.locations]
@@ -599,9 +656,7 @@ class SandboxSolver:
                         yield change
 
     def update_limits(self):
-        limits = {
-            self.location_type[key][GK.type_]: val for key, val in KW.limits.items()
-        }
+        limits = {self.location_type[key]: val for key, val in KW.limits.items()}
         for location in self.solution[LK.locations].values():
             type = location[LK.locationType]
             limits[type] -= 1
@@ -617,7 +672,7 @@ class SandboxSolver:
         ]
         types = []
         for key in keys_in_order:
-            type = self.location_type[key][GK.type_]
+            type = self.location_type[key]
             if self.limits[type] > 0:
                 types.append(type)
         return types

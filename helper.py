@@ -21,7 +21,7 @@ def bundle(f3=None, f9=None, type=None, longitude=None, latitude=None):
     return out
 
 
-def apply_change(locations, change, capped=True):
+def apply_change(locations, change, capped=True, no_remove=False):
     for key, mod in change.items():
         if key not in locations:
             locations[key] = mod
@@ -45,5 +45,6 @@ def apply_change(locations, change, capped=True):
                         loc[key] = min(Settings.max_stations, max(0, val))
             if loc[LK.f3100Count] == 0 and loc[LK.f9100Count] == 0:
                 to_remove.append(loc_key)
-        for key in to_remove:
-            del locations[key]
+        if not no_remove:
+            for key in to_remove:
+                del locations[key]

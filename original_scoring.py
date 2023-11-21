@@ -1,6 +1,6 @@
 import math
+from typing import Dict
 import uuid
-
 from data_keys import (
     LocationKeys as LK,
     CoordinateKeys as CK,
@@ -11,21 +11,8 @@ from data_keys import (
     MapKeys as MK,
 )
 
-from settings import Settings
 
-
-def calculateScore(
-    mapName,
-    solution,
-    change,
-    mapEntity,
-    generalData,
-    distance_cache,
-    sandbox_names=None,
-    inverse_sandbox_names=None,
-    skip_validation=False,
-    round_total=False,
-):
+def calculateScore(mapName, solution, mapEntity, generalData):
     scoredSolution = {
         SK.gameId: str(uuid.uuid4()),
         SK.mapName: mapName,
@@ -41,19 +28,16 @@ def calculateScore(
         locationListNoRefillStation = {}
         for key in mapEntity[LK.locations]:
             loc = mapEntity[LK.locations][key]
-            f3_count = 0
-            f9_count = 0
             if key in solution[LK.locations]:
                 loc_player = solution[LK.locations][key]
                 f3_count = loc_player[LK.f3100Count]
                 f9_count = loc_player[LK.f9100Count]
-            if key in change:
-                f3_count += change[key][LK.f3100Count]
-                f9_count += change[key][LK.f9100Count]
-            f3_count = min(Settings.max_stations, max(0, f3_count))
-            f9_count = min(Settings.max_stations, max(0, f9_count))
 
-            if f3_count > 0 or f9_count > 0:
+                for f_count in [f3_count, f9_count]:
+                    if f_count < 0 or f_count > 2:
+                        raise SystemExit(
+                            f"Max number of locations is 2 for each type of refill station. Remove or alter location: {key}"
+                        )
                 scoredSolution[LK.locations][key] = {
                     LK.locationName: loc[LK.locationName],
                     LK.locationType: loc[LK.locationType],
@@ -93,33 +77,19 @@ def calculateScore(
             )
 
         scoredSolution[LK.locations] = distributeSales(
-            scoredSolution[LK.locations],
-            locationListNoRefillStation,
-            generalData,
-            distance_cache,
+            scoredSolution[LK.locations], locationListNoRefillStation, generalData
         )
     else:
-        if not skip_validation:
-            sandboxValidation(mapEntity, solution, change, sandbox_names)
+        sandboxValidation(mapEntity, solution)
         scoredSolution[LK.locations] = initiateSandboxLocations(
-            scoredSolution[LK.locations],
-            generalData,
-            solution,
-            change,
-            distance_cache,
-            sandbox_names,
-            inverse_sandbox_names,
+            scoredSolution[LK.locations], generalData, solution
         )
-        scoredSolution[LK.locations] = calculateFootfall(
-            scoredSolution[LK.locations], mapEntity, inverse_sandbox_names
+        scoredSolution[LK.locations] = calcualteFootfall(
+            scoredSolution[LK.locations], mapEntity
         )
 
     scoredSolution[LK.locations] = divideFootfall(
-        scoredSolution[LK.locations],
-        generalData,
-        distance_cache,
-        sandbox_names,
-        inverse_sandbox_names,
+        scoredSolution[LK.locations], generalData
     )
 
     for key in scoredSolution[LK.locations]:
@@ -179,27 +149,20 @@ def calculateScore(
         scoredSolution[SK.totalRevenue] - scoredSolution[SK.totalLeasingCost]
     ) / 1000
 
-    if round_total:  # why would I want a round total???
-        scoredSolution[SK.gameScore][SK.total] = round(
-            (
-                scoredSolution[SK.gameScore][SK.co2Savings]
-                * generalData[GK.co2PricePerKiloInSek]
-                + scoredSolution[SK.gameScore][SK.earnings]
-            )
-            * (1 + scoredSolution[SK.gameScore][SK.totalFootfall]),
-            2,
-        )
-    else:
-        scoredSolution[SK.gameScore][SK.total] = (
+    scoredSolution[SK.gameScore][SK.total] = round(
+        (
             scoredSolution[SK.gameScore][SK.co2Savings]
             * generalData[GK.co2PricePerKiloInSek]
             + scoredSolution[SK.gameScore][SK.earnings]
-        ) * (1 + scoredSolution[SK.gameScore][SK.totalFootfall])
+        )
+        * (1 + scoredSolution[SK.gameScore][SK.totalFootfall]),
+        2,
+    )
 
     return scoredSolution
 
 
-def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> float:
+def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> int:
     R = 6371e3
     φ1 = lat_1 * math.pi / 180  #  φ, λ in radians
     φ2 = lat_2 * math.pi / 180
@@ -217,12 +180,20 @@ def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> float:
     return round(d, 0)
 
 
-def distributeSales(with_, without, generalData, distance_cache):
+def distributeSales(with_, without, generalData):
     for key_without in without:
-        nearby = distance_cache.get(key_without)
-        distributeSalesTo = {k: d for k, d in nearby.items() if k in with_}
-
+        distributeSalesTo = {}
         loc_without = without[key_without]
+
+        for key_with_ in with_:
+            distance = distanceBetweenPoint(
+                loc_without[CK.latitude],
+                loc_without[CK.longitude],
+                with_[key_with_][CK.latitude],
+                with_[key_with_][CK.longitude],
+            )
+            if distance < generalData[GK.willingnessToTravelInMeters]:
+                distributeSalesTo[with_[key_with_][LK.locationName]] = distance
 
         total = 0
         if distributeSalesTo:
@@ -248,30 +219,22 @@ def distributeSales(with_, without, generalData, distance_cache):
     return with_
 
 
-hotspot_footfall_cache = {}
-
-
-def calculateFootfall(locations, mapEntity, inverse_sandbox_names):
+def calcualteFootfall(locations, mapEntity):
     maxFootfall = 0
     for keyLoc in locations:
         loc = locations[keyLoc]
-        isn_key = inverse_sandbox_names[keyLoc]
-        if isn_key not in hotspot_footfall_cache:
-            increase = 0
-            for hotspot in mapEntity[HK.hotspots]:
-                distanceInMeters = distanceBetweenPoint(
-                    hotspot[CK.latitude],
-                    hotspot[CK.longitude],
-                    loc[CK.latitude],
-                    loc[CK.longitude],
-                )
+        for hotspot in mapEntity[HK.hotspots]:
+            distanceInMeters = distanceBetweenPoint(
+                hotspot[CK.latitude],
+                hotspot[CK.longitude],
+                loc[CK.latitude],
+                loc[CK.longitude],
+            )
 
-                maxSpread = hotspot[HK.spread]
-                if distanceInMeters <= maxSpread:
-                    val = hotspot[LK.footfall] * (1 - (distanceInMeters / maxSpread))
-                    increase += val / 10
-            hotspot_footfall_cache[isn_key] = increase
-        loc[LK.footfall] += hotspot_footfall_cache[isn_key]
+            maxSpread = hotspot[HK.spread]
+            if distanceInMeters <= maxSpread:
+                val = hotspot[LK.footfall] * (1 - (distanceInMeters / maxSpread))
+                loc[LK.footfall] += val / 10
         if maxFootfall < loc[LK.footfall]:
             maxFootfall = loc[LK.footfall]
 
@@ -293,116 +256,70 @@ def getSalesVolume(locationType, generalData):
     return 0
 
 
-def initiateSandboxLocations(
-    locations: list,
-    generalData,
-    solution,
-    change,
-    distance_cache,
-    sandbox_names,
-    inverse_sandbox_names,
-):
-    def generate_locations():
-        for k, loc in solution[LK.locations].items():
-            yield (k, loc)
-        for k, loc in change.items():
-            if k not in solution[LK.locations]:
-                yield (k, loc)
-
-    # get key from the location, but respect changes
-    def fetch(locKey, loc, key):
-        # loc here skips some lookups but you don't know if it is from solution or change
-        if locKey not in change:
-            # now we know it is solution loc without any changes
-            return loc[key]
-        # assume locKey in change, but might not be in solution
-        if key in [LK.f3100Count, LK.f9100Count]:
-            # counts get summed
-            c = 0
-            if (
-                locKey in solution[LK.locations]
-                and key in solution[LK.locations][locKey]
-            ):
-                c += solution[LK.locations][locKey][key]
-            if key in change[locKey]:
-                c += change[locKey][key]
-            return c
-        if key in change[locKey]:
-            # not a count so change takes precedence
-            return change[locKey][key]
-        return solution[LK.locations][locKey][key]
-
-    # sales volumes don't need millions of lookups
-    sales_volumes = {}
-    for type in generalData[GK.locationTypes].values():
-        sales_volumes[type[GK.type_]] = type[GK.salesVol]
-
-    for key, loc in generate_locations():
-        loc_type = fetch(key, loc, LK.locationType)
-        sv = sales_volumes[loc_type]
-        f3 = fetch(key, loc, LK.f3100Count)
-        f9 = fetch(key, loc, LK.f9100Count)
+def initiateSandboxLocations(locations: list, generalData, solution):
+    for key in solution[LK.locations]:
+        loc_player = solution[LK.locations][key]
+        sv = getSalesVolume(loc_player[LK.locationType], generalData)
         scoredSolution = {
             LK.footfall: 0,
-            CK.longitude: fetch(key, loc, CK.longitude),
-            CK.latitude: fetch(key, loc, CK.latitude),
-            LK.f3100Count: f3,
-            LK.f9100Count: f9,
-            LK.locationType: loc_type,
-            LK.locationName: sandbox_names[key],
+            CK.longitude: loc_player[CK.longitude],
+            CK.latitude: loc_player[CK.latitude],
+            LK.f3100Count: loc_player[LK.f3100Count],
+            LK.f9100Count: loc_player[LK.f9100Count],
+            LK.locationType: loc_player[LK.locationType],
+            LK.locationName: key,
             LK.salesVolume: sv,
-            LK.salesCapacity: f3 * generalData[GK.f3100Data][GK.refillCapacityPerWeek]
-            + f9 * generalData[GK.f9100Data][GK.refillCapacityPerWeek],
-            LK.leasingCost: f3 * generalData[GK.f3100Data][GK.leasingCostPerWeek]
-            + f9 * generalData[GK.f9100Data][GK.leasingCostPerWeek],
+            LK.salesCapacity: loc_player[LK.f3100Count]
+            * generalData[GK.f3100Data][GK.refillCapacityPerWeek]
+            + loc_player[LK.f9100Count]
+            * generalData[GK.f9100Data][GK.refillCapacityPerWeek],
+            LK.leasingCost: loc_player[LK.f3100Count]
+            * generalData[GK.f3100Data][GK.leasingCostPerWeek]
+            + loc_player[LK.f9100Count]
+            * generalData[GK.f9100Data][GK.leasingCostPerWeek],
         }
-        locations[sandbox_names[key]] = scoredSolution
+        locations[key] = scoredSolution
 
     for key in locations:
         count = 1
 
-        # for keySurrounding in locations:
-        #     if key != keySurrounding:
-        #         distance = distanceBetweenPoint(
-        #             locations[key][CK.latitude],
-        #             locations[key][CK.longitude],
-        #             locations[keySurrounding][CK.latitude],
-        #             locations[keySurrounding][CK.longitude],
-        #         )
-        #         if distance < generalData[GK.willingnessToTravelInMeters]:
-        #             count += 1
-        nearby = [
-            k for k in distance_cache[inverse_sandbox_names[key]] if k in sandbox_names
-        ]
-
-        # if count != 1 + len(nearby):
-        #     print(count, 1 + len(nearby))
-        #     print("ERROR")
-        #     raise SystemExit("Error")
-
-        count += len(nearby)
+        for keySurrounding in locations:
+            if key != keySurrounding:
+                distance = distanceBetweenPoint(
+                    locations[key][CK.latitude],
+                    locations[key][CK.longitude],
+                    locations[keySurrounding][CK.latitude],
+                    locations[keySurrounding][CK.longitude],
+                )
+                if distance < generalData[GK.willingnessToTravelInMeters]:
+                    count += 1
 
         locations[key][LK.salesVolume] = locations[key][LK.salesVolume] / count
 
     return locations
 
 
-def divideFootfall(
-    locations, generalData, distance_cache, sandbox_names, inverse_sandbox_names
-):
+def divideFootfall(locations, generalData):
     for key in locations:
-        if sandbox_names is None:
-            count = 1 + len([k for k in distance_cache.get(key) if k in locations])
-        else:
-            cache_key = inverse_sandbox_names[key]
-            count = 1 + len(
-                [k for k in distance_cache.get(cache_key) if k in sandbox_names]
-            )
+        count = 1
+
+        for keySurrounding in locations:
+            if key != keySurrounding:
+                distance = distanceBetweenPoint(
+                    locations[key][CK.latitude],
+                    locations[key][CK.longitude],
+                    locations[keySurrounding][CK.latitude],
+                    locations[keySurrounding][CK.longitude],
+                )
+                if distance < generalData[GK.willingnessToTravelInMeters]:
+                    count += 1
+
         locations[key][LK.footfall] = locations[key][LK.footfall] / count
+
     return locations
 
 
-def sandboxValidation(mapEntity, request, change, sandbox_names):
+def sandboxValidation(mapEntity, request):
     countGroceryStoreLarge = 0
     countGroceryStore = 0
     countConvenience = 0
@@ -424,20 +341,12 @@ def sandboxValidation(mapEntity, request, change, sandbox_names):
 
     numberErrorMsg = f"locationName needs to start with 'location' and followed with a number larger than 0 and less than {totalStores + 1}."
 
-    def generate_locations():
-        for k in request[LK.locations]:
-            yield k
-        for k in change:
-            if k not in request[LK.locations]:
-                yield k
-
-    for locKey in generate_locations():
+    for locKey in request[LK.locations]:
         # Validate location name
-        name = sandbox_names[locKey]
-        if str(name).startswith("location") == False:
-            raise SystemExit(f"{numberErrorMsg} {locKey}:{name} is not a valid name")
-        loc_num = name[8:]
-        if not name:
+        if str(locKey).startswith("location") == False:
+            raise SystemExit(f"{numberErrorMsg} {locKey} is not a valid name")
+        loc_num = locKey[8:]
+        if not locKey:
             raise SystemExit(
                 f"{numberErrorMsg} Nothing followed location in the locationName"
             )
@@ -450,37 +359,29 @@ def sandboxValidation(mapEntity, request, change, sandbox_names):
             raise SystemExit(f"{numberErrorMsg} {loc_num} is not a number")
 
         # Validate long and lat
-        if locKey in change and CK.latitude in change[locKey]:
-            lat = change[locKey][CK.latitude]
-        else:
-            lat = request[LK.locations][locKey][CK.latitude]
         if (
-            mapEntity[MK.border][MK.latitudeMin] > lat
-            or mapEntity[MK.border][MK.latitudeMax] < lat
+            mapEntity[MK.border][MK.latitudeMin]
+            > request[LK.locations][locKey][CK.latitude]
+            or mapEntity[MK.border][MK.latitudeMax]
+            < request[LK.locations][locKey][CK.latitude]
         ):
             raise SystemExit(
-                f"Latitude is missing or out of bounds for location : {locKey}:{name}"
+                f"Latitude is missing or out of bounds for location : {locKey}"
             )
-
-        if locKey in change and CK.longitude in change[locKey]:
-            long = change[locKey][CK.longitude]
-        else:
-            long = request[LK.locations][locKey][CK.longitude]
         if (
-            mapEntity[MK.border][MK.longitudeMin] > long
-            or mapEntity[MK.border][MK.longitudeMax] < long
+            mapEntity[MK.border][MK.longitudeMin]
+            > request[LK.locations][locKey][CK.longitude]
+            or mapEntity[MK.border][MK.longitudeMax]
+            < request[LK.locations][locKey][CK.longitude]
         ):
             raise SystemExit(
-                f"Longitude is missing or out of bounds for location : {locKey}:{name}"
+                f"Longitude is missing or out of bounds for location : {locKey}"
             )
-
         # Validate locationType
-        if locKey in change and LK.locationType in change[locKey]:
-            t = change[locKey][LK.locationType]
-        else:
-            t = request[LK.locations][locKey][LK.locationType]
+
+        t = request[LK.locations][locKey][LK.locationType]
         if not t:
-            raise SystemExit(f"locationType is missing for location) : {locKey}:{name}")
+            raise SystemExit(f"locationType is missing for location) : {locKey}")
         elif t == "Grocery-store-large":
             countGroceryStoreLarge += 1
         elif t == "Grocery-store":
@@ -493,7 +394,7 @@ def sandboxValidation(mapEntity, request, change, sandbox_names):
             countKiosk += 1
         else:
             raise SystemExit(
-                f"locationType --> {t} not valid (check GetGeneralGameData for correct values) for location : {locKey}:{name}"
+                f"locationType --> {t} not valid (check GetGeneralGameData for correct values) for location : {locKey}"
             )
         # Validate that max number of location is not exceeded
         if (

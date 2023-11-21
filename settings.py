@@ -11,17 +11,17 @@ class Settings:
 
     do_multiprocessing = False
 
-    do_mega = True
+    do_mega = False
     mega_count = 1
-    do_sets = True
+    do_sets = False
     do_groups = True
     group_size = 16
     groups_distance_limit = 100.0
 
-    sandbox_explore_how_many = 8
-    do_sandbox_groups = False
+    sandbox_explore_how_many = 4
+    do_sandbox_groups = True
     sandbox_group_size = 2
-    sandbox_groups_distance_limit = 200.0
+    sandbox_groups_distance_limit = 100.0
     do_sandbox_sets = True
     sandbox_too_near = 1.0
-    granularity = 2e7
+    granularity = 1e5
