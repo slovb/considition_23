@@ -11,8 +11,6 @@ class Settings:
 
     do_multiprocessing = False
 
-    do_mega = False
-    mega_count = 1
     do_sets = False
     do_groups = True
     group_size = 16

@@ -14,6 +14,7 @@ from helper import apply_change, bundle
 from scoring import distanceBetweenPoint, calculateScore
 from original_scoring import calculateScore as originalCalculateScore
 from settings import Settings
+from solver import Solver, abs_angle_change
 from store import store
 
 
@@ -30,41 +31,34 @@ class KW:
     nearby = "nearby"
 
 
-def abs_angle_change(la1, lo1, la2, lo2):
-    return abs(la2 - la1) + abs(lo2 - lo1)
+def temporary_names(solution, change):
+    names = {}
+    inverse = {}
+    i = 1
+    for key in solution[LK.locations]:
+        name = f"location{i}"
+        names[key] = name
+        inverse[name] = key
+        i += 1
+    for key in change:
+        if key not in solution[LK.locations]:
+            name = f"location{i}"
+            names[key] = name
+            inverse[name] = key
+            i += 1
+    return names, inverse
 
 
-class SandboxSolver:
+class SandboxSolver(Solver):
     def __init__(self, mapName, mapEntity, generalData):
-        self.mapName = mapName
-        self.mapEntity = mapEntity
-        self.generalData = generalData
+        super().__init__(mapName=mapName, mapEntity=mapEntity, generalData=generalData)
+
         self.hotspot_cache = {}
         self.location_candidates = {}
-        self.distance_cache = {}
-        self.location_type = {}
-        self.best = 0
-        self.best_id = None
-        self.solution = {"locations": {}}
         self.no_remove = False
 
     def calculate(self, change, skip_validation=True):
-        names = {}
-        inverse = {}
-
-        def generate_names(solution, change):
-            i = 1
-            for key in solution[LK.locations]:
-                yield key, f"location{i}"
-                i += 1
-            for key in change:
-                if key not in solution[LK.locations]:
-                    yield key, f"location{i}"
-                    i += 1
-
-        for key, name in generate_names(self.solution, change):
-            names[key] = name
-            inverse[name] = key
+        names, inverse = temporary_names(self.solution, change)
         return calculateScore(
             self.mapName,
             self.solution,
@@ -79,7 +73,6 @@ class SandboxSolver:
 
     def calculate_verification(self):
         solution = {LK.locations: {}}
-        i = 1
         fields = [
             LK.f3100Count,
             LK.f9100Count,
@@ -87,6 +80,7 @@ class SandboxSolver:
             CK.longitude,
             LK.locationType,
         ]
+        i = 1
         for location in self.solution[LK.locations].values():
             solution[LK.locations][f"location{i}"] = {
                 field: location[field] for field in fields
@@ -97,15 +91,7 @@ class SandboxSolver:
         )
 
     def initialize(self):
-        self.location_type = {}
-        for key in [
-            GK.gasStation,
-            GK.groceryStore,
-            GK.groceryStoreLarge,
-            GK.kiosk,
-            GK.convenience,
-        ]:
-            self.location_type[key] = self.generalData[GK.locationTypes][key][GK.type_]
+        super().initialize()
         self.latitudeMax = self.mapEntity[MK.border][MK.latitudeMax]
         self.latitudeMin = self.mapEntity[MK.border][MK.latitudeMin]
         self.longitudeMax = self.mapEntity[MK.border][MK.longitudeMax]
@@ -113,11 +99,12 @@ class SandboxSolver:
         self.lla = lambda la: min(self.latitudeMax, max(self.latitudeMin, la))
         self.llo = lambda lo: min(self.longitudeMax, max(self.longitudeMin, lo))
         self.update_limits()
+        self.rebuild_cache()
 
     def rebuild_cache(self):
         self.rebuild_hotspot_cache()
         self.rebuild_location_candidates()
-        self.rebuild_distance_cache()
+        self.rebuild_distance_cache(self.location_candidates)
 
     def rebuild_hotspot_cache(self):
         hotspots = self.mapEntity[HK.hotspots]
@@ -208,38 +195,23 @@ class SandboxSolver:
         print(f"{len(candidates)} candidates")
         self.location_candidates = candidates
 
-    def rebuild_distance_cache(self):
-        locations = self.location_candidates
-        keys = []
-        lats = []
-        longs = []
-        willingnessToTravelInMeters = self.generalData[GK.willingnessToTravelInMeters]
-        way_too_far = 1.0
-        for key, location in locations.items():
-            keys.append(key)
-            self.distance_cache[key] = {}
-            lats.append(location[CK.latitude])
-            longs.append(location[CK.longitude])
-        for i in range(len(lats) - 1):
-            for j in range(i + 1, len(lats)):
-                abc = abs_angle_change(lats[i], longs[i], lats[j], longs[j])
-                if abc > way_too_far:  # very rough distance limit
-                    continue
-                distance = distanceBetweenPoint(lats[i], longs[i], lats[j], longs[j])
-                if distance < willingnessToTravelInMeters:
-                    self.distance_cache[keys[i]][keys[j]] = distance
-                    self.distance_cache[keys[j]][keys[i]] = distance
-                else:
-                    way_too_far = min(way_too_far, 10.0 * abc)
+    def find_candidates(self):
+        return super().find_candidates()
+
+    def improve_scored_candidates(self, candidates, totals, scores):
+        return super().improve_scored_candidates(candidates, totals, scores)
 
     def solve(self):
         the_good = set()
         the_bad = set()
         the_ugly = set()
+
         do_sets = Settings.do_sandbox_sets
 
         old_best = self.best
+
         stale_progress = False
+
         while True:
             print(self.limits)
             if do_sets:
@@ -404,11 +376,14 @@ class SandboxSolver:
             )
             print(f"addition: {json.dumps(changes[index], indent=4)}")
             store(self.mapName, score)
-            verification = self.calculate_verification()
-            ver_total = verification[SK.gameScore][SK.total]
-            print(f"verification total {ver_total}")
-            if ver_total != round(total, 2):
-                raise SystemExit(f"!!!!!! {round(total, 2)}")
+
+            # Verification step if feeling unsure
+            # verification = self.calculate_verification()
+            # ver_total = verification[SK.gameScore][SK.total]
+            # print(f"verification total {ver_total}")
+            # if ver_total != round(total, 2):
+            #     raise SystemExit(f"!!!!!! {round(total, 2)}")
+
             self.update_limits()
             for key in changes[index]:
                 nearby = self.distance_cache[key]
@@ -427,9 +402,9 @@ class SandboxSolver:
             map(changes.append, self.generate_swaps())
         # for change in self.generate_swaps():
         #     changes.append(change)
-        #     for change in self.generate_moves():
+        #     for change in self.generate_moves(self.solution[LK.locations]):
         #         changes.append(change)
-        #     for change in self.generate_consolidation():
+        #     for change in self.generate_consolidation(self.solution[LK.locations]):
         #         changes.append(change)
 
         # score changes
@@ -553,107 +528,6 @@ class SandboxSolver:
                                 longitude=location[CK.longitude],
                             ),
                         }
-
-    def generate_moves(self):
-        locations = self.solution[LK.locations]
-        # locations = self.location_candidates # won't work as this code can't create types or add coords
-        for main_key in locations:
-            main_location = self.solution[LK.locations].get(main_key)
-            if (
-                main_location is not None
-                and main_location[LK.f3100Count] == Settings.max_stations
-                and main_location[LK.f9100Count] == Settings.max_stations
-            ):
-                continue
-            nearby = [
-                key
-                for key in self.distance_cache.get(main_key)
-                if key in self.solution[LK.locations]
-            ]
-            for sub_key in nearby:
-                sub_loc = self.solution[LK.locations].get(sub_key)
-                changes = []
-                if (
-                    main_location is None
-                    or main_location[LK.f3100Count] < Settings.max_stations
-                ):
-                    changes.append({main_key: bundle(1, 0)})
-                if (
-                    main_location is None
-                    or main_location[LK.f9100Count] < Settings.max_stations
-                ):
-                    changes.append({main_key: bundle(0, 1)})
-                if (
-                    main_location is not None
-                    and main_location[LK.f3100Count] > 0
-                    and main_location[LK.f9100Count] < Settings.max_stations
-                ):
-                    changes.append({main_key: bundle(-1, 1)})
-                for change in changes:
-                    if (
-                        main_location is None
-                        or main_location[LK.f3100Count] < Settings.max_stations
-                    ):
-                        change[main_key] = bundle(1, 0)
-                    elif main_location[LK.f3100Count] == Settings.max_stations:
-                        change[main_key] = bundle(-1, 1)
-
-                    if sub_loc[LK.f3100Count] == 0:
-                        change[sub_key] = bundle(1, -1)
-                    else:
-                        change[sub_key] = bundle(-1, 0)
-                    yield change
-
-    def generate_consolidation(self):
-        locations = self.solution[LK.locations]
-        # locations = self.location_candidates  # won't work as this code can't create types or add coords
-        for main_key in locations:
-            main_location = self.solution[LK.locations].get(main_key)
-            if (
-                main_location is not None
-                and main_location[LK.f3100Count] == Settings.max_stations
-                and main_location[LK.f9100Count] == Settings.max_stations
-            ):
-                continue
-            nearby = [
-                key
-                for key in self.distance_cache.get(main_key)
-                if key in self.solution[LK.locations]
-            ]
-            if len(nearby) < 2:
-                continue
-            for i, sub_1_key in enumerate(nearby[:-1]):
-                sub_1_loc = self.solution[LK.locations].get(sub_1_key)
-                for sub_2_key in nearby[i + 1 :]:
-                    sub_2_loc = self.solution[LK.locations].get(sub_2_key)
-                    changes = []
-                    if (
-                        main_location is None
-                        or main_location[LK.f3100Count] < Settings.max_stations
-                    ):
-                        changes.append({main_key: bundle(1, 0)})
-                    if (
-                        main_location is None
-                        or main_location[LK.f9100Count] < Settings.max_stations
-                    ):
-                        changes.append({main_key: bundle(0, 1)})
-                    if (
-                        main_location is not None
-                        and main_location[LK.f3100Count] > 0
-                        and main_location[LK.f9100Count] < Settings.max_stations
-                    ):
-                        changes.append({main_key: bundle(-1, 1)})
-                    for change in changes:
-                        if sub_1_loc[LK.f3100Count] == 0:
-                            change[sub_1_key] = bundle(1, -1)
-                        else:
-                            change[sub_1_key] = bundle(-1, 0)
-
-                        if sub_2_loc[LK.f3100Count] == 0:
-                            change[sub_2_key] = bundle(1, -1)
-                        else:
-                            change[sub_2_key] = bundle(-1, 0)
-                        yield change
 
     def update_limits(self):
         limits = {self.location_type[key]: val for key, val in KW.limits.items()}

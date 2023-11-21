@@ -78,7 +78,6 @@ def main(mapName=None):
             if mapName in [MN.gSandbox, MN.sSandbox]:
                 solver = SandboxSolver(mapName, mapEntity, generalData)
                 solver.initialize()
-                solver.rebuild_cache()
                 solver.solve()
 
                 formatted_best = "{:,}".format(int(solver.best)).replace(",", " ")
@@ -86,7 +85,6 @@ def main(mapName=None):
             else:
                 solver = RegularSolver(mapName, mapEntity, generalData)
                 solver.initialize()
-                solver.rebuild_cache()
                 solver.solve()
 
                 formatted_best = "{:,}".format(int(solver.best)).replace(",", " ")
