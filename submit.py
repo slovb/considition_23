@@ -27,8 +27,9 @@ def get_solution(game):
     mapName = game[SK.mapName]
 
     for k, v in game[LK.locations].items():
-        if v[LK.f3100Count] == 0 and v[LK.f9100Count] == 0:
-            continue
+        if mapName not in [MN.gSandbox, MN.sSandbox]:
+            if v[LK.f3100Count] == 0 and v[LK.f9100Count] == 0:
+                continue
         locations[k] = {
             LK.f3100Count: v[LK.f3100Count],
             LK.f9100Count: v[LK.f9100Count],

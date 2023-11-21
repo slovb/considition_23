@@ -29,6 +29,10 @@ class KW:
     nearby = "nearby"
 
 
+def abs_angle_change(la1, lo1, la2, lo2):
+    return abs(la2 - la1) + abs(lo2 - lo1)
+
+
 class SandboxSolver:
     def __init__(self, mapName, mapEntity, generalData):
         self.mapName = mapName
@@ -42,7 +46,7 @@ class SandboxSolver:
         self.best_id = None
         self.solution = {"locations": {}}
 
-    def calculate(self, change):
+    def calculate(self, change, skip_validation=True):
         names = {}
         reverted = {}
 
@@ -68,6 +72,7 @@ class SandboxSolver:
             self.distance_cache,
             names,
             reverted,
+            skip_validation=skip_validation,
         )
 
     def initialize(self):
@@ -101,6 +106,8 @@ class SandboxSolver:
         hotspots = self.mapEntity[HK.hotspots]
         hotspot_cache = {}
         keys = []
+        willingnessToTravelInMeters = self.generalData[GK.willingnessToTravelInMeters]
+        way_too_far = 1.0
         for key, hotspot in enumerate(hotspots):
             keys.append(key)
             hotspot_cache[key] = hotspot
@@ -111,35 +118,42 @@ class SandboxSolver:
             for j_key in keys[i + 1 :]:
                 j_lat = hotspot_cache[j_key][CK.latitude]
                 j_long = hotspot_cache[j_key][CK.longitude]
+                abc = abs_angle_change(i_lat, i_long, j_lat, j_long)
+                if abc > way_too_far:  # very rough distance limit
+                    continue
                 distance = distanceBetweenPoint(i_lat, i_long, j_lat, j_long)
-                if distance < self.generalData[GK.willingnessToTravelInMeters]:
+                if distance < willingnessToTravelInMeters:
                     hotspot_cache[i_key][KW.nearby][j_key] = distance
                     hotspot_cache[j_key][KW.nearby][i_key] = distance
+                else:
+                    way_too_far = min(way_too_far, 10.0 * abc)
         self.hotspot_cache = hotspot_cache
 
     def rebuild_location_candidates(self):
         candidates = {}
         i = 1
         taken = set()
+        tkey = lambda x: int(x * Settings.granularity)
 
         def adder(i, latitude, longitude, name):
             la = self.lla(latitude)
             lo = self.llo(longitude)
-            if (la, lo) not in taken:
+            kk = (tkey(la), tkey(lo))
+            if kk not in taken:
                 candidates[f"c_{name}_{i}"] = bundle(
                     latitude=la,
                     longitude=lo,
                 )
-                taken.add((la, lo))
+                taken.add(kk)
                 return i + 1
             return i
+
+        w = lambda spread, footfall: footfall / spread
 
         for hotspot in self.hotspot_cache.values():
             hotspot_la = hotspot[CK.latitude]
             hotspot_lo = hotspot[CK.longitude]
-            hotspot_w = hotspot[HK.spread] * hotspot[LK.footfall]
-            # add the hotspot as a location
-            i = adder(i, hotspot_la, hotspot_lo, "hotspot")
+            hotspot_w = w(hotspot[HK.spread], hotspot[LK.footfall])
 
             # start collecting a cluster node
             cluster_la = hotspot_la * hotspot_w
@@ -150,7 +164,7 @@ class SandboxSolver:
                 neighbor = self.hotspot_cache[neighbor_key]
                 neighbor_la = neighbor[CK.latitude]
                 neighbor_lo = neighbor[CK.longitude]
-                neighbor_w = neighbor[HK.spread] * neighbor[LK.footfall]
+                neighbor_w = w(neighbor[HK.spread], neighbor[LK.footfall])
 
                 # add the weighted average of the two points
                 avg_la = (hotspot_la * hotspot_w + neighbor_la * neighbor_w) / (
@@ -171,7 +185,10 @@ class SandboxSolver:
             cluster_lo = cluster_lo / cluster_w
             i = adder(i, cluster_la, cluster_lo, "cluster")
 
-        print(f"{len(candidates)} candidates, remove near nodes later")
+            # add the hotspot as a location
+            i = adder(i, hotspot_la, hotspot_lo, "hotspot")
+
+        print(f"{len(candidates)} candidates")
         self.location_candidates = candidates
 
     def rebuild_distance_cache(self):
@@ -179,6 +196,8 @@ class SandboxSolver:
         keys = []
         lats = []
         longs = []
+        willingnessToTravelInMeters = self.generalData[GK.willingnessToTravelInMeters]
+        way_too_far = 1.0
         for key, location in locations.items():
             keys.append(key)
             self.distance_cache[key] = {}
@@ -186,10 +205,15 @@ class SandboxSolver:
             longs.append(location[CK.longitude])
         for i in range(len(lats) - 1):
             for j in range(i + 1, len(lats)):
+                abc = abs_angle_change(lats[i], longs[i], lats[j], longs[j])
+                if abc > way_too_far:  # very rough distance limit
+                    continue
                 distance = distanceBetweenPoint(lats[i], longs[i], lats[j], longs[j])
-                if distance < self.generalData[GK.willingnessToTravelInMeters]:
+                if distance < willingnessToTravelInMeters:
                     self.distance_cache[keys[i]][keys[j]] = distance
                     self.distance_cache[keys[j]][keys[i]] = distance
+                else:
+                    way_too_far = min(way_too_far, 10.0 * abc)
 
     def solve(self):
         the_good = set()
@@ -200,6 +224,7 @@ class SandboxSolver:
         old_best = self.best
         stale_progress = False
         while True:
+            print(self.limits)
             if do_sets:
                 the_ugly = the_bad.difference(the_good)  # these will be ignored
                 the_good = set()
@@ -208,7 +233,8 @@ class SandboxSolver:
 
             #
             self.add_location(the_good=the_good, the_bad=the_bad, ignore=the_ugly)
-            self.tweak_locations(stale_progress=stale_progress)
+            if stale_progress:
+                self.tweak_locations(stale_progress=stale_progress)
             if self.best > old_best:
                 old_best = self.best
                 stale_progress = False
@@ -339,7 +365,7 @@ class SandboxSolver:
 
         # apply the best change
         total = max(totals)
-        if total > self.best:
+        if total >= self.best:
             self.best = total
             index = totals.index(total)
             score = scores[index]
@@ -361,11 +387,11 @@ class SandboxSolver:
         changes = []
         for change in self.generate_changes():
             changes.append(change)
-        if stale_progress:
-            for change in self.generate_moves():
-                changes.append(change)
-            for change in self.generate_consolidation():
-                changes.append(change)
+        # if stale_progress:
+        #     for change in self.generate_moves():
+        #         changes.append(change)
+        #     for change in self.generate_consolidation():
+        #         changes.append(change)
 
         # score changes
         if Settings.do_multiprocessing:
@@ -426,6 +452,20 @@ class SandboxSolver:
             for key, location in self.location_candidates.items()
             if key not in ignore
         )
+        f3 = 1
+        f9 = 0
+        if type == self.location_type[GK.groceryStoreLarge][GK.type_]:
+            f3 = 0
+            f9 = 2
+        elif type == self.location_type[GK.groceryStore][GK.type_]:
+            f3 = 0
+            f9 = 1
+        elif type == self.location_type[GK.kiosk][GK.type_]:
+            f3 = 0
+            f9 = 0
+            candidates = (
+                (key, location) for key, location in self.location_candidates.items()
+            )
         for key, location in candidates:
             if key in self.solution:
                 continue
@@ -434,8 +474,8 @@ class SandboxSolver:
                     latitude=location[CK.latitude],
                     longitude=location[CK.longitude],
                     type=type,
-                    f3=0,
-                    f9=1,
+                    f3=f3,
+                    f9=f9,
                 )
             }
 

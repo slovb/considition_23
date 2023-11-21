@@ -23,6 +23,8 @@ def calculateScore(
     distance_cache,
     sandbox_names=None,
     inverse_sandbox_names=None,
+    skip_validation=False,
+    round_total=False,
 ):
     scoredSolution = {
         SK.gameId: str(uuid.uuid4()),
@@ -97,11 +99,18 @@ def calculateScore(
             distance_cache,
         )
     else:
-        sandboxValidation(mapEntity, solution, change, sandbox_names)
+        if not skip_validation:
+            sandboxValidation(mapEntity, solution, change, sandbox_names)
         scoredSolution[LK.locations] = initiateSandboxLocations(
-            scoredSolution[LK.locations], generalData, solution, change, sandbox_names
+            scoredSolution[LK.locations],
+            generalData,
+            solution,
+            change,
+            distance_cache,
+            sandbox_names,
+            inverse_sandbox_names,
         )
-        scoredSolution[LK.locations] = calcualteFootfall(
+        scoredSolution[LK.locations] = calculateFootfall(
             scoredSolution[LK.locations], mapEntity
         )
 
@@ -166,15 +175,22 @@ def calculateScore(
         scoredSolution[SK.totalRevenue] - scoredSolution[SK.totalLeasingCost]
     ) / 1000
 
-    scoredSolution[SK.gameScore][SK.total] = round(
-        (
+    if round_total:  # why would I want a round total???
+        scoredSolution[SK.gameScore][SK.total] = round(
+            (
+                scoredSolution[SK.gameScore][SK.co2Savings]
+                * generalData[GK.co2PricePerKiloInSek]
+                + scoredSolution[SK.gameScore][SK.earnings]
+            )
+            * (1 + scoredSolution[SK.gameScore][SK.totalFootfall]),
+            2,
+        )
+    else:
+        scoredSolution[SK.gameScore][SK.total] = (
             scoredSolution[SK.gameScore][SK.co2Savings]
             * generalData[GK.co2PricePerKiloInSek]
             + scoredSolution[SK.gameScore][SK.earnings]
-        )
-        * (1 + scoredSolution[SK.gameScore][SK.totalFootfall]),
-        2,
-    )
+        ) * (1 + scoredSolution[SK.gameScore][SK.totalFootfall])
 
     return scoredSolution
 
@@ -228,22 +244,29 @@ def distributeSales(with_, without, generalData, distance_cache):
     return with_
 
 
-def calcualteFootfall(locations, mapEntity):
+hotspot_footfall_cache = {}
+
+
+def calculateFootfall(locations, mapEntity):
     maxFootfall = 0
     for keyLoc in locations:
         loc = locations[keyLoc]
-        for hotspot in mapEntity[HK.hotspots]:
-            distanceInMeters = distanceBetweenPoint(
-                hotspot[CK.latitude],
-                hotspot[CK.longitude],
-                loc[CK.latitude],
-                loc[CK.longitude],
-            )
+        if keyLoc not in hotspot_footfall_cache:
+            increase = 0
+            for hotspot in mapEntity[HK.hotspots]:
+                distanceInMeters = distanceBetweenPoint(
+                    hotspot[CK.latitude],
+                    hotspot[CK.longitude],
+                    loc[CK.latitude],
+                    loc[CK.longitude],
+                )
 
-            maxSpread = hotspot[HK.spread]
-            if distanceInMeters <= maxSpread:
-                val = hotspot[LK.footfall] * (1 - (distanceInMeters / maxSpread))
-                loc[LK.footfall] += val / 10
+                maxSpread = hotspot[HK.spread]
+                if distanceInMeters <= maxSpread:
+                    val = hotspot[LK.footfall] * (1 - (distanceInMeters / maxSpread))
+                    increase += val / 10
+            hotspot_footfall_cache[keyLoc] = increase
+        loc[LK.footfall] += hotspot_footfall_cache[keyLoc]
         if maxFootfall < loc[LK.footfall]:
             maxFootfall = loc[LK.footfall]
 
@@ -266,65 +289,86 @@ def getSalesVolume(locationType, generalData):
 
 
 def initiateSandboxLocations(
-    locations: list, generalData, solution, change, sandbox_names
+    locations: list,
+    generalData,
+    solution,
+    change,
+    distance_cache,
+    sandbox_names,
+    inverse_sandbox_names,
 ):
     def generate_locations():
-        for k in solution[LK.locations]:
-            yield k
-        for k in change:
+        for k, loc in solution[LK.locations].items():
+            yield (k, loc)
+        for k, loc in change.items():
             if k not in solution[LK.locations]:
-                yield k
+                yield (k, loc)
 
-    def fetch(locKey, key):
+    # get key from the location, but respect changes
+    def fetch(locKey, loc, key):
+        # loc here skips some lookups but you don't know if it is from solution or change
+        if locKey not in change:
+            # now we know it is solution loc without any changes
+            return loc[key]
+        # assume locKey in change, but might not be in solution
         if key in [LK.f3100Count, LK.f9100Count]:
+            # counts get summed
             c = 0
             if (
                 locKey in solution[LK.locations]
                 and key in solution[LK.locations][locKey]
             ):
                 c += solution[LK.locations][locKey][key]
-            if locKey in change and key in change[locKey]:
+            if key in change[locKey]:
                 c += change[locKey][key]
             return c
-        if locKey in change and key in change[locKey]:
+        if key in change[locKey]:
+            # not a count so change takes precedence
             return change[locKey][key]
         return solution[LK.locations][locKey][key]
 
-    for key in generate_locations():
-        sv = getSalesVolume(fetch(key, LK.locationType), generalData)
+    for key, loc in generate_locations():
+        loc_type = fetch(key, loc, LK.locationType)
+        sv = getSalesVolume(loc_type, generalData)
+        f3 = fetch(key, loc, LK.f3100Count)
+        f9 = fetch(key, loc, LK.f9100Count)
         scoredSolution = {
             LK.footfall: 0,
-            CK.longitude: fetch(key, CK.longitude),
-            CK.latitude: fetch(key, CK.latitude),
-            LK.f3100Count: fetch(key, LK.f3100Count),
-            LK.f9100Count: fetch(key, LK.f9100Count),
-            LK.locationType: fetch(key, LK.locationType),
+            CK.longitude: fetch(key, loc, CK.longitude),
+            CK.latitude: fetch(key, loc, CK.latitude),
+            LK.f3100Count: f3,
+            LK.f9100Count: f9,
+            LK.locationType: loc_type,
             LK.locationName: sandbox_names[key],
             LK.salesVolume: sv,
-            LK.salesCapacity: fetch(key, LK.f3100Count)
-            * generalData[GK.f3100Data][GK.refillCapacityPerWeek]
-            + fetch(key, LK.f9100Count)
-            * generalData[GK.f9100Data][GK.refillCapacityPerWeek],
-            LK.leasingCost: fetch(key, LK.f3100Count)
-            * generalData[GK.f3100Data][GK.leasingCostPerWeek]
-            + fetch(key, LK.f9100Count)
-            * generalData[GK.f9100Data][GK.leasingCostPerWeek],
+            LK.salesCapacity: f3 * generalData[GK.f3100Data][GK.refillCapacityPerWeek]
+            + f9 * generalData[GK.f9100Data][GK.refillCapacityPerWeek],
+            LK.leasingCost: f3 * generalData[GK.f3100Data][GK.leasingCostPerWeek]
+            + f9 * generalData[GK.f9100Data][GK.leasingCostPerWeek],
         }
         locations[sandbox_names[key]] = scoredSolution
 
     for key in locations:
         count = 1
 
-        for keySurrounding in locations:
-            if key != keySurrounding:
-                distance = distanceBetweenPoint(
-                    locations[key][CK.latitude],
-                    locations[key][CK.longitude],
-                    locations[keySurrounding][CK.latitude],
-                    locations[keySurrounding][CK.longitude],
-                )
-                if distance < generalData[GK.willingnessToTravelInMeters]:
-                    count += 1
+        # for keySurrounding in locations:
+        #     if key != keySurrounding:
+        #         distance = distanceBetweenPoint(
+        #             locations[key][CK.latitude],
+        #             locations[key][CK.longitude],
+        #             locations[keySurrounding][CK.latitude],
+        #             locations[keySurrounding][CK.longitude],
+        #         )
+        #         if distance < generalData[GK.willingnessToTravelInMeters]:
+        #             count += 1
+        nearby = [
+            k for k in distance_cache[inverse_sandbox_names[key]] if k in sandbox_names
+        ]
+        # if count != 1 + len(nearby):
+        #     print(count, 1 + len(nearby))
+        #     print("ERROR")
+        #     raise SystemExit("Error")
+        count += len(nearby)
 
         locations[key][LK.salesVolume] = locations[key][LK.salesVolume] / count
 
