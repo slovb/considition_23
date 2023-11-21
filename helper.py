@@ -1,24 +1,24 @@
+from dataclasses import dataclass
 from data_keys import (
     CoordinateKeys as CK,
+    GeneralKeys as GK,
     LocationKeys as LK,
 )
 
 from settings import Settings
 
 
-def bundle(f3=None, f9=None, type=None, longitude=None, latitude=None):
-    out = {}
-    if f3 is not None:
-        out[LK.f3100Count] = f3
-    if f9 is not None:
-        out[LK.f9100Count] = f9
-    if type is not None:
-        out[LK.locationType] = type
-    if longitude is not None:
-        out[CK.longitude] = longitude
-    if latitude is not None:
-        out[CK.latitude] = latitude
-    return out
+@dataclass
+class KW:
+    limit = "limit"
+    limits = {
+        GK.groceryStoreLarge: 5,
+        GK.groceryStore: 20,
+        GK.gasStation: 8,
+        GK.convenience: 20,
+        GK.kiosk: 3,
+    }
+    nearby = "nearby"
 
 
 def apply_change(locations, change, capped=True, no_remove=False):
@@ -48,3 +48,36 @@ def apply_change(locations, change, capped=True, no_remove=False):
         if not no_remove:
             for key in to_remove:
                 del locations[key]
+
+
+def bundle(f3=None, f9=None, type=None, longitude=None, latitude=None):
+    out = {}
+    if f3 is not None:
+        out[LK.f3100Count] = f3
+    if f9 is not None:
+        out[LK.f9100Count] = f9
+    if type is not None:
+        out[LK.locationType] = type
+    if longitude is not None:
+        out[CK.longitude] = longitude
+    if latitude is not None:
+        out[CK.latitude] = latitude
+    return out
+
+
+def temporary_names(solution, change):
+    names = {}
+    inverse = {}
+    i = 1
+    for key in solution[LK.locations]:
+        name = f"location{i}"
+        names[key] = name
+        inverse[name] = key
+        i += 1
+    for key in change:
+        if key not in solution[LK.locations]:
+            name = f"location{i}"
+            names[key] = name
+            inverse[name] = key
+            i += 1
+    return names, inverse

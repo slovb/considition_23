@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import json
 from multiprocessing import Pool
 
@@ -10,7 +9,7 @@ from data_keys import (
     MapKeys as MK,
     ScoringKeys as SK,
 )
-from helper import apply_change, bundle
+from helper import apply_change, bundle, KW, temporary_names
 from scoring import distanceBetweenPoint, calculateScore
 from original_scoring import calculateScore as originalCalculateScore
 from settings import Settings
@@ -18,35 +17,111 @@ from solver import Solver, abs_angle_change
 from store import store
 
 
-@dataclass
-class KW:
-    limit = "limit"
-    limits = {
-        GK.groceryStoreLarge: 5,
-        GK.groceryStore: 20,
-        GK.gasStation: 8,
-        GK.convenience: 20,
-        GK.kiosk: 3,
-    }
-    nearby = "nearby"
+# @frozen
+class MapLimiter:
+    def __init__(self, latitudeMin, latitudeMax, longitudeMin, longitudeMax):
+        self.latitudeMin = latitudeMin
+        self.latitudeMax = latitudeMax
+        self.longitudeMin = longitudeMin
+        self.longitudeMax = longitudeMax
+
+    def latitude(self, latitude):
+        return min(self.latitudeMax, max(self.latitudeMin, latitude))
+
+    def longitude(self, longitude):
+        return min(self.longitudeMax, max(self.longitudeMin, longitude))
 
 
-def temporary_names(solution, change):
-    names = {}
-    inverse = {}
+def build_hotspot_cache(mapEntity, generalData):
+    ############ TODO USE SPREAD DISTANCE NOT JUST WILLINGNESS (maybe both)
+    hotspots = mapEntity[HK.hotspots]
+    hotspot_cache = {}
+    keys = []
+    willingnessToTravelInMeters = generalData[GK.willingnessToTravelInMeters]
+    way_too_far = 1.0
+    for key, hotspot in enumerate(hotspots):
+        keys.append(key)
+        hotspot_cache[key] = hotspot
+        hotspot_cache[key][KW.nearby] = {}
+    for i, i_key in enumerate(keys[:-1]):
+        i_lat = hotspot_cache[i_key][CK.latitude]
+        i_long = hotspot_cache[i_key][CK.longitude]
+        for j_key in keys[i + 1 :]:
+            j_lat = hotspot_cache[j_key][CK.latitude]
+            j_long = hotspot_cache[j_key][CK.longitude]
+            abc = abs_angle_change(i_lat, i_long, j_lat, j_long)
+            if abc > way_too_far:  # very rough distance limit
+                continue
+            distance = distanceBetweenPoint(i_lat, i_long, j_lat, j_long)
+            if distance < willingnessToTravelInMeters:
+                hotspot_cache[i_key][KW.nearby][j_key] = distance
+                hotspot_cache[j_key][KW.nearby][i_key] = distance
+            else:
+                way_too_far = min(way_too_far, 10.0 * abc)
+    return hotspot_cache
+
+
+def find_possible_locations(hotspot_cache, map_limiter: MapLimiter):
+    locations = {}
     i = 1
-    for key in solution[LK.locations]:
-        name = f"location{i}"
-        names[key] = name
-        inverse[name] = key
-        i += 1
-    for key in change:
-        if key not in solution[LK.locations]:
-            name = f"location{i}"
-            names[key] = name
-            inverse[name] = key
-            i += 1
-    return names, inverse
+    taken = set()
+    tkey = lambda x: int(x * Settings.granularity)
+
+    def adder(i, latitude, longitude, name):
+        la = map_limiter.latitude(latitude)
+        lo = map_limiter.longitude(longitude)
+        kk = (tkey(la), tkey(lo))
+        if kk not in taken:
+            locations[f"c_{name}_{i}"] = bundle(
+                latitude=la,
+                longitude=lo,
+            )
+            taken.add(kk)
+            return i + 1
+        return i
+
+    w = lambda spread, footfall: footfall / spread
+
+    for hotspot in hotspot_cache.values():
+        hotspot_la = hotspot[CK.latitude]
+        hotspot_lo = hotspot[CK.longitude]
+        hotspot_w = w(hotspot[HK.spread], hotspot[LK.footfall])
+
+        # start collecting a cluster node
+        cluster_la = hotspot_la * hotspot_w
+        cluster_lo = hotspot_lo * hotspot_w
+        cluster_w = hotspot_w
+
+        for neighbor_key in hotspot[KW.nearby]:
+            neighbor = hotspot_cache[neighbor_key]
+            neighbor_la = neighbor[CK.latitude]
+            neighbor_lo = neighbor[CK.longitude]
+            neighbor_w = w(neighbor[HK.spread], neighbor[LK.footfall])
+
+            # add the weighted average of the two points
+            avg_la = (hotspot_la * hotspot_w + neighbor_la * neighbor_w) / (
+                hotspot_w + neighbor_w
+            )
+            avg_lo = (hotspot_lo * hotspot_w + neighbor_lo * neighbor_w) / (
+                hotspot_w + neighbor_w
+            )
+            i = adder(i, avg_la, avg_lo, "between")
+
+            # increase the clusterpoint
+            cluster_la += neighbor_la * neighbor_w
+            cluster_lo += neighbor_lo * neighbor_w
+            cluster_w += neighbor_w
+
+        # add the clusterpoint
+        cluster_la = cluster_la / cluster_w
+        cluster_lo = cluster_lo / cluster_w
+        i = adder(i, cluster_la, cluster_lo, "cluster")
+
+        # add the hotspot as a location
+        i = adder(i, hotspot_la, hotspot_lo, "hotspot")
+
+    print(f"{len(locations)} candidates")
+    return locations
 
 
 class SandboxSolver(Solver):
@@ -54,7 +129,7 @@ class SandboxSolver(Solver):
         super().__init__(mapName=mapName, mapEntity=mapEntity, generalData=generalData)
 
         self.hotspot_cache = {}
-        self.location_candidates = {}
+        self.possible_locations = {}
         self.no_remove = False
 
     def calculate(self, change, skip_validation=True):
@@ -92,111 +167,29 @@ class SandboxSolver(Solver):
 
     def initialize(self):
         super().initialize()
-        self.latitudeMax = self.mapEntity[MK.border][MK.latitudeMax]
-        self.latitudeMin = self.mapEntity[MK.border][MK.latitudeMin]
-        self.longitudeMax = self.mapEntity[MK.border][MK.longitudeMax]
-        self.longitudeMin = self.mapEntity[MK.border][MK.longitudeMin]
-        self.lla = lambda la: min(self.latitudeMax, max(self.latitudeMin, la))
-        self.llo = lambda lo: min(self.longitudeMax, max(self.longitudeMin, lo))
+        self.map_limiter = MapLimiter(
+            latitudeMin=self.mapEntity[MK.border][MK.latitudeMin],
+            latitudeMax=self.mapEntity[MK.border][MK.latitudeMax],
+            longitudeMin=self.mapEntity[MK.border][MK.longitudeMin],
+            longitudeMax=self.mapEntity[MK.border][MK.longitudeMax],
+        )
         self.update_limits()
         self.rebuild_cache()
 
     def rebuild_cache(self):
-        self.rebuild_hotspot_cache()
-        self.rebuild_location_candidates()
-        self.rebuild_distance_cache(self.location_candidates)
-
-    def rebuild_hotspot_cache(self):
-        hotspots = self.mapEntity[HK.hotspots]
-        hotspot_cache = {}
-        keys = []
-        willingnessToTravelInMeters = self.generalData[GK.willingnessToTravelInMeters]
-        way_too_far = 1.0
-        for key, hotspot in enumerate(hotspots):
-            keys.append(key)
-            hotspot_cache[key] = hotspot
-            hotspot_cache[key][KW.nearby] = {}
-        for i, i_key in enumerate(keys[:-1]):
-            i_lat = hotspot_cache[i_key][CK.latitude]
-            i_long = hotspot_cache[i_key][CK.longitude]
-            for j_key in keys[i + 1 :]:
-                j_lat = hotspot_cache[j_key][CK.latitude]
-                j_long = hotspot_cache[j_key][CK.longitude]
-                abc = abs_angle_change(i_lat, i_long, j_lat, j_long)
-                if abc > way_too_far:  # very rough distance limit
-                    continue
-                distance = distanceBetweenPoint(i_lat, i_long, j_lat, j_long)
-                if distance < willingnessToTravelInMeters:
-                    hotspot_cache[i_key][KW.nearby][j_key] = distance
-                    hotspot_cache[j_key][KW.nearby][i_key] = distance
-                else:
-                    way_too_far = min(way_too_far, 10.0 * abc)
-        self.hotspot_cache = hotspot_cache
-
-    def rebuild_location_candidates(self):
-        candidates = {}
-        i = 1
-        taken = set()
-        tkey = lambda x: int(x * Settings.granularity)
-
-        def adder(i, latitude, longitude, name):
-            la = self.lla(latitude)
-            lo = self.llo(longitude)
-            kk = (tkey(la), tkey(lo))
-            if kk not in taken:
-                candidates[f"c_{name}_{i}"] = bundle(
-                    latitude=la,
-                    longitude=lo,
-                )
-                taken.add(kk)
-                return i + 1
-            return i
-
-        w = lambda spread, footfall: footfall / spread
-
-        for hotspot in self.hotspot_cache.values():
-            hotspot_la = hotspot[CK.latitude]
-            hotspot_lo = hotspot[CK.longitude]
-            hotspot_w = w(hotspot[HK.spread], hotspot[LK.footfall])
-
-            # start collecting a cluster node
-            cluster_la = hotspot_la * hotspot_w
-            cluster_lo = hotspot_lo * hotspot_w
-            cluster_w = hotspot_w
-
-            for neighbor_key in hotspot[KW.nearby]:
-                neighbor = self.hotspot_cache[neighbor_key]
-                neighbor_la = neighbor[CK.latitude]
-                neighbor_lo = neighbor[CK.longitude]
-                neighbor_w = w(neighbor[HK.spread], neighbor[LK.footfall])
-
-                # add the weighted average of the two points
-                avg_la = (hotspot_la * hotspot_w + neighbor_la * neighbor_w) / (
-                    hotspot_w + neighbor_w
-                )
-                avg_lo = (hotspot_lo * hotspot_w + neighbor_lo * neighbor_w) / (
-                    hotspot_w + neighbor_w
-                )
-                i = adder(i, avg_la, avg_lo, "between")
-
-                # increase the clusterpoint
-                cluster_la += neighbor_la * neighbor_w
-                cluster_lo += neighbor_lo * neighbor_w
-                cluster_w += neighbor_w
-
-            # add the clusterpoint
-            cluster_la = cluster_la / cluster_w
-            cluster_lo = cluster_lo / cluster_w
-            i = adder(i, cluster_la, cluster_lo, "cluster")
-
-            # add the hotspot as a location
-            i = adder(i, hotspot_la, hotspot_lo, "hotspot")
-
-        print(f"{len(candidates)} candidates")
-        self.location_candidates = candidates
+        self.hotspot_cache = build_hotspot_cache(
+            mapEntity=self.mapEntity, generalData=self.generalData
+        )
+        self.possible_locations = find_possible_locations(
+            hotspot_cache=self.hotspot_cache, map_limiter=self.map_limiter
+        )
+        self.rebuild_distance_cache(self.possible_locations)
 
     def find_candidates(self):
         return super().find_candidates()
+
+    def find_new_locations(self):
+        pass
 
     def improve_scored_candidates(self, candidates, totals, scores):
         return super().improve_scored_candidates(candidates, totals, scores)
@@ -467,7 +460,7 @@ class SandboxSolver(Solver):
         type = types[0]  # biggest type
         candidates = (
             (key, location)
-            for key, location in self.location_candidates.items()
+            for key, location in self.possible_locations.items()
             if key not in ignore
         )
         f3 = 1
@@ -536,7 +529,8 @@ class SandboxSolver(Solver):
             limits[type] -= 1
         self.limits = limits
 
-    def remaining_types_in_order(self):  # order of salesVolume
+    def remaining_types_in_order(self):
+        # order of salesVolume
         keys_in_order = [
             GK.groceryStoreLarge,
             GK.groceryStore,
