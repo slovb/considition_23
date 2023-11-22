@@ -1,3 +1,4 @@
+from typing import Dict, Tuple
 from data_keys import (
     CoordinateKeys as CK,
     GeneralKeys as GK,
@@ -11,7 +12,7 @@ from settings import Settings, KW
 from solver import abs_angle_change
 
 
-def build_hotspot_cache(mapEntity, generalData):
+def build_hotspot_cache(mapEntity: Dict, generalData: Dict) -> Dict:
     ############ TODO USE SPREAD DISTANCE NOT JUST WILLINGNESS (maybe both)
     hotspots = mapEntity[HK.hotspots]
     hotspot_cache = {}
@@ -40,13 +41,15 @@ def build_hotspot_cache(mapEntity, generalData):
     return hotspot_cache
 
 
-def find_possible_locations(hotspot_cache, map_limiter: MapLimiter):
+def find_possible_locations(
+    hotspot_cache: Dict, map_limiter: MapLimiter
+) -> Dict[str, Dict]:
     locations = {}
     i = 1
     taken = set()
     tkey = lambda x: int(x * Settings.granularity)
 
-    def adder(i, latitude, longitude, name):
+    def adder(i: int, latitude: float, longitude: float, name: str) -> int:
         la = map_limiter.latitude(latitude)
         lo = map_limiter.longitude(longitude)
         kk = (tkey(la), tkey(lo))
@@ -103,7 +106,9 @@ def find_possible_locations(hotspot_cache, map_limiter: MapLimiter):
     return locations
 
 
-def temporary_names(solution, change):
+def temporary_names(
+    solution: Dict, change: Dict[str, Dict]
+) -> Tuple[Dict[str, str], Dict[str, str]]:
     names = {}
     inverse = {}
     i = 1

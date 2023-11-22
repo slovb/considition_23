@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import Dict
-import typing
 
 from data_keys import ScoringKeys as SK
 
@@ -13,12 +12,12 @@ class STag:
     group = "group"
 
 
-def get_total(score: Dict) -> float:
+def get_total(score: Dict[str, Dict]) -> float:
     return score[SK.gameScore][SK.total]
 
 
 class Suggestion:
-    def __init__(self, change: dict, tag: str) -> None:
+    def __init__(self, change: Dict[str, Dict], tag: str) -> None:
         self.change = change
         self.tag = tag
 

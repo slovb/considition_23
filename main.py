@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 from api import getGeneralData, getMapData
@@ -10,13 +11,14 @@ from data_keys import (
 from regular_solver import RegularSolver
 from sandbox_solver import SandboxSolver
 from settings import Settings
+from solver import Solver
 
 
 load_dotenv()
 apiKey = os.environ["apiKey"]
 
 
-def main(mapName=None):
+def main(mapName: Optional[str] = None) -> None:
     for folder in [Settings.game_folder, Settings.log_folder, Settings.cache_folder]:
         if not os.path.exists(folder):
             print(f"Creating folder {folder}")
@@ -75,20 +77,16 @@ def main(mapName=None):
         generalData = getGeneralData(Settings.cache_folder)
 
         if mapEntity and generalData:
+            solver: Solver
             if mapName in [MN.gSandbox, MN.sSandbox]:
                 solver = SandboxSolver(mapName, mapEntity, generalData)
-                solver.initialize()
-                solver.solve()
-
-                formatted_best = "{:,}".format(int(solver.best)).replace(",", " ")
-                print(f"Best: {formatted_best}\t{solver.best_id}")
             else:
                 solver = RegularSolver(mapName, mapEntity, generalData)
-                solver.initialize()
-                solver.solve()
+            solver.initialize()
+            solver.solve()
 
-                formatted_best = "{:,}".format(int(solver.best)).replace(",", " ")
-                print(f"Best: {formatted_best}\t{solver.best_id}")
+            formatted_best = "{:,}".format(int(solver.best)).replace(",", " ")
+            print(f"Best: {formatted_best}\t{solver.best_id}")
         else:
             raise SystemExit("ERR Missing data")
 

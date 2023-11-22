@@ -1,13 +1,18 @@
+from typing import Any, Dict, Optional
 from data_keys import (
     CoordinateKeys as CK,
-    GeneralKeys as GK,
     LocationKeys as LK,
 )
 
 from settings import Settings
 
 
-def apply_change(locations, change, capped=True, no_remove=False):
+def apply_change(
+    locations: Dict[str, Dict],
+    change: Dict[str, Dict],
+    capped: bool = True,
+    no_remove: bool = False,
+) -> None:
     for key, mod in change.items():
         if key not in locations:
             locations[key] = mod
@@ -36,8 +41,14 @@ def apply_change(locations, change, capped=True, no_remove=False):
                 del locations[key]
 
 
-def bundle(f3=None, f9=None, type=None, longitude=None, latitude=None):
-    out = {}
+def bundle(
+    f3: Optional[int] = None,
+    f9: Optional[int] = None,
+    type: Optional[str] = None,
+    longitude: Optional[float] = None,
+    latitude: Optional[float] = None,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
     if f3 is not None:
         out[LK.f3100Count] = f3
     if f9 is not None:

@@ -16,11 +16,11 @@ from suggestion import ScoredSuggestion, Suggestion, STag
 
 
 class SandboxSolver(Solver):
-    def __init__(self, mapName, mapEntity, generalData):
+    def __init__(self, mapName: str, mapEntity: Dict, generalData: Dict) -> None:
         super().__init__(mapName=mapName, mapEntity=mapEntity, generalData=generalData)
 
-        self.hotspot_cache = {}
-        self.possible_locations = {}
+        self.hotspot_cache: Dict = {}
+        self.possible_locations: Dict[str, Dict] = {}
         self.no_remove = False
 
     def calculate(

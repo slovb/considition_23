@@ -12,7 +12,7 @@ from suggestion import ScoredSuggestion, Suggestion, STag
 
 
 class RegularSolver(Solver):
-    def __init__(self, mapName, mapEntity, generalData):
+    def __init__(self, mapName: str, mapEntity: Dict, generalData: Dict) -> None:
         super().__init__(mapName=mapName, mapEntity=mapEntity, generalData=generalData)
 
     def list_actions(

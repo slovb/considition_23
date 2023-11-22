@@ -17,7 +17,7 @@ load_dotenv()
 apiKey = os.environ["apiKey"]
 
 
-def verify(id):
+def verify(id: str) -> None:
     game = load_game(id)
     mapName = game[SK.mapName]
     ##Get map data from Considition endpoint

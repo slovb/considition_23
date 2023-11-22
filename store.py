@@ -1,10 +1,11 @@
+from typing import Dict
 from data_keys import ScoringKeys as SK
 import json
 
 from settings import Settings
 
 
-def store(mapName, score):
+def store(mapName: str, score: Dict) -> None:
     id_ = score[SK.gameId]
     total = score[SK.gameScore][SK.total]
     formatted_total = "{:,}".format(int(total)).replace(",", " ")

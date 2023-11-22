@@ -6,7 +6,6 @@ from data_keys import (
     CoordinateKeys as CK,
     LocationKeys as LK,
     GeneralKeys as GK,
-    ScoringKeys as SK,
 )
 from helper import apply_change, bundle
 from scoring import distanceBetweenPoint

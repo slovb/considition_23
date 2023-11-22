@@ -1,3 +1,4 @@
+from typing import Dict, Optional
 import requests
 import os
 import json
@@ -7,7 +8,7 @@ load_dotenv()
 domain = os.environ["domain"]
 
 
-def getMapData(mapName, apiKey, cache_folder):
+def getMapData(mapName, apiKey: str, cache_folder: str) -> Optional[Dict]:
     path = f"{cache_folder}/{mapName}.json"
     if not os.path.exists(path):
         print(f"getting map data for {mapName}")
@@ -27,7 +28,7 @@ def getMapData(mapName, apiKey, cache_folder):
         return json.load(f)
 
 
-def getGeneralData(cache_folder):
+def getGeneralData(cache_folder: str) -> Optional[Dict]:
     path = f"{cache_folder}/general.json"
     if not os.path.exists(path):
         print("getting general data")
@@ -44,7 +45,7 @@ def getGeneralData(cache_folder):
         return json.load(f)
 
 
-def getGame(id_):
+def getGame(id_: str) -> Optional[Dict]:
     try:
         resp = requests.get(f"{domain}/api/Game/getGameData?gameId={id_}")
         resp.raise_for_status()
@@ -55,7 +56,7 @@ def getGame(id_):
         return resp.json()
 
 
-def submit(mapName: str, solution, apiKey):
+def submit(mapName: str, solution: Dict, apiKey: str) -> Optional[Dict]:
     try:
         resp = requests.post(
             f"{domain}/api/Game/submitSolution?mapName={mapName}",

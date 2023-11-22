@@ -1,9 +1,10 @@
 import sys
+from typing import Tuple
 
 from settings import Settings
 
 
-def best(mapName):
+def best(mapName: str) -> Tuple[int, str]:
     path = f"{Settings.log_folder}/{mapName}.txt"
     with open(path, "r", encoding="utf8") as f:
         scores = []

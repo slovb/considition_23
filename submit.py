@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+from typing import Dict
 import api
 from dotenv import load_dotenv
 
@@ -17,12 +18,12 @@ load_dotenv()
 apiKey = os.environ["apiKey"]
 
 
-def load_game(id):
+def load_game(id: str) -> Dict:
     with open(f"{Settings.game_folder}/{id}.json", "r", encoding="utf8") as f:
         return json.load(f)
 
 
-def get_solution(game):
+def get_solution(game: Dict) -> Dict[str, Dict]:
     locations = {}
     mapName = game[SK.mapName]
 
@@ -42,7 +43,7 @@ def get_solution(game):
     return {LK.locations: locations}
 
 
-def submit(id):
+def submit(id: str) -> None:
     game = load_game(id)
     mapName = game[SK.mapName]
     solution = get_solution(game)
