@@ -9,7 +9,7 @@ from data_keys import (
     ScoringKeys as SK,
 )
 from helper import apply_change, bundle
-from scoring import distanceBetweenPoint, calculateScore
+from scoring import distanceBetweenPoint
 from settings import Settings
 from store import store
 
@@ -37,6 +37,7 @@ class Solver(ABC):
         self.best_id = None
         self.solution = {"locations": {}}
 
+        self.no_remove = False
         self.do_sets = Settings.do_sets
         self.the_good = set()
         self.the_bad = set()
@@ -44,15 +45,25 @@ class Solver(ABC):
         self.stale_progress = False
         super().__init__()
 
-    def calculate(self, change):
-        return calculateScore(
-            self.mapName,
-            self.solution,
-            change,
-            self.mapEntity,
-            self.generalData,
-            self.distance_cache,
-        )
+    @abstractmethod
+    def find_candidates(self) -> list:
+        return []
+
+    @abstractmethod
+    def improve_scored_candidates(self, candidates, totals, scores) -> list:
+        return []
+
+    @abstractmethod
+    def another_improve_scored_candidates(self, candidates, totals, scores) -> list:
+        return []
+
+    @abstractmethod
+    def post_improvement(self, change) -> None:
+        pass
+
+    @abstractmethod
+    def calculate(self, change) -> dict:
+        return {}
 
     def initialize(self):
         self.location_type = {}
@@ -185,19 +196,13 @@ class Solver(ABC):
                             change[sub_2_key] = bundle(-1, 0)
                         yield change
 
-    @abstractmethod
-    def find_candidates(self):
-        pass
+    def score_candidates(self, candidates):
+        if Settings.do_multiprocessing:
+            with Pool(4) as pool:
+                return pool.map(self.calculate, candidates)
+        return list(map(self.calculate, candidates))
 
-    @abstractmethod
-    def improve_scored_candidates(self, candidates, totals, scores):
-        pass
-
-    @abstractmethod
-    def post_improvement(self, change):
-        pass
-
-    def solve(self):
+    def solve(self) -> None:
         while True:
             if self.do_sets:
                 # these will be ignored
@@ -236,9 +241,23 @@ class Solver(ABC):
                 else:
                     break
 
-            self.improve_scored_candidates(
+            # do rounds of improvements
+            suggestions = self.improve_scored_candidates(
                 candidates=candidates, totals=totals, scores=scores
             )
+            more_scores = self.score_candidates(suggestions)
+            candidates += suggestions
+            scores += more_scores
+            totals += list(map(get_total, more_scores))
+
+            # do another round of improvements (REFACTOR NOW!!!)
+            suggestions = self.another_improve_scored_candidates(
+                candidates=candidates, totals=totals, scores=scores
+            )
+            more_scores = self.score_candidates(suggestions)
+            candidates += suggestions
+            scores += more_scores
+            totals += list(map(get_total, more_scores))
 
             # apply the best change
             total = max(totals)
@@ -249,7 +268,9 @@ class Solver(ABC):
                 score = scores[index]
                 self.best_id = get_game_id(score)
                 print(f"candidate: {json.dumps(candidate, indent=4)}")
-                apply_change(self.solution[LK.locations], candidate)
+                apply_change(
+                    self.solution[LK.locations], candidate, no_remove=self.no_remove
+                )
                 store(self.mapName, score)
                 self.stale_progress = False
                 self.post_improvement(candidate)

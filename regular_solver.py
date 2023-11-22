@@ -1,9 +1,6 @@
-from multiprocessing import Pool
-
 from data_keys import (
     LocationKeys as LK,
     GeneralKeys as GK,
-    ScoringKeys as SK,
 )
 from helper import apply_change, bundle
 from scoring import calculateScore
@@ -96,6 +93,7 @@ class RegularSolver(Solver):
         return changes
 
     def improve_scored_candidates(self, candidates, totals, scores):
+        suggestions = []
         # process totals, extract ids that improved
         improvements = []
         for i, total in enumerate(totals):
@@ -121,10 +119,15 @@ class RegularSolver(Solver):
                 apply_change(group_change, candidates[i], capped=False)
                 if pick_count >= Settings.group_size:
                     break
-            candidates.append(group_change)
-            group_score = self.calculate(group_change)
-            scores.append(group_score)
-            totals.append(get_total(group_score))
+            suggestions.append(group_change)
+            # candidates.append(group_change)
+            # group_score = self.calculate(group_change)
+            # scores.append(group_score)
+            # totals.append(get_total(group_score))
+        return suggestions
+
+    def another_improve_scored_candidates(self, candidates, totals, scores) -> list:
+        return super().another_improve_scored_candidates(candidates, totals, scores)
 
     def post_improvement(self, change):
         return super().post_improvement(change)

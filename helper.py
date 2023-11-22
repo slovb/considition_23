@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from data_keys import (
     CoordinateKeys as CK,
     GeneralKeys as GK,
@@ -6,19 +5,6 @@ from data_keys import (
 )
 
 from settings import Settings
-
-
-@dataclass
-class KW:
-    limit = "limit"
-    limits = {
-        GK.groceryStoreLarge: 5,
-        GK.groceryStore: 20,
-        GK.gasStation: 8,
-        GK.convenience: 20,
-        GK.kiosk: 3,
-    }
-    nearby = "nearby"
 
 
 def apply_change(locations, change, capped=True, no_remove=False):
@@ -63,21 +49,3 @@ def bundle(f3=None, f9=None, type=None, longitude=None, latitude=None):
     if latitude is not None:
         out[CK.latitude] = latitude
     return out
-
-
-def temporary_names(solution, change):
-    names = {}
-    inverse = {}
-    i = 1
-    for key in solution[LK.locations]:
-        name = f"location{i}"
-        names[key] = name
-        inverse[name] = key
-        i += 1
-    for key in change:
-        if key not in solution[LK.locations]:
-            name = f"location{i}"
-            names[key] = name
-            inverse[name] = key
-            i += 1
-    return names, inverse

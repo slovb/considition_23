@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from data_keys import GeneralKeys as GK
 
 
 @dataclass
@@ -23,3 +24,16 @@ class Settings:
     do_sandbox_sets = True
     sandbox_too_near = 1.0
     granularity = 1e5
+
+
+@dataclass
+class KW:
+    limit = "limit"
+    limits = {
+        GK.groceryStoreLarge: 5,
+        GK.groceryStore: 20,
+        GK.gasStation: 8,
+        GK.convenience: 20,
+        GK.kiosk: 3,
+    }
+    nearby = "nearby"

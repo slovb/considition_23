@@ -4,124 +4,18 @@ from multiprocessing import Pool
 from data_keys import (
     CoordinateKeys as CK,
     GeneralKeys as GK,
-    HotspotKeys as HK,
     LocationKeys as LK,
     MapKeys as MK,
     ScoringKeys as SK,
 )
-from helper import apply_change, bundle, KW, temporary_names
-from scoring import distanceBetweenPoint, calculateScore
+from helper import apply_change, bundle
+from map_limiter import MapLimiter
+from sandbox_helper import build_hotspot_cache, find_possible_locations, temporary_names
+from scoring import calculateScore
 from original_scoring import calculateScore as originalCalculateScore
-from settings import Settings
-from solver import Solver, abs_angle_change, get_total
+from settings import Settings, KW
+from solver import Solver
 from store import store
-
-
-# @frozen
-class MapLimiter:
-    def __init__(self, latitudeMin, latitudeMax, longitudeMin, longitudeMax):
-        self.latitudeMin = latitudeMin
-        self.latitudeMax = latitudeMax
-        self.longitudeMin = longitudeMin
-        self.longitudeMax = longitudeMax
-
-    def latitude(self, latitude):
-        return min(self.latitudeMax, max(self.latitudeMin, latitude))
-
-    def longitude(self, longitude):
-        return min(self.longitudeMax, max(self.longitudeMin, longitude))
-
-
-def build_hotspot_cache(mapEntity, generalData):
-    ############ TODO USE SPREAD DISTANCE NOT JUST WILLINGNESS (maybe both)
-    hotspots = mapEntity[HK.hotspots]
-    hotspot_cache = {}
-    keys = []
-    willingnessToTravelInMeters = generalData[GK.willingnessToTravelInMeters]
-    way_too_far = 1.0
-    for key, hotspot in enumerate(hotspots):
-        keys.append(key)
-        hotspot_cache[key] = hotspot
-        hotspot_cache[key][KW.nearby] = {}
-    for i, i_key in enumerate(keys[:-1]):
-        i_lat = hotspot_cache[i_key][CK.latitude]
-        i_long = hotspot_cache[i_key][CK.longitude]
-        for j_key in keys[i + 1 :]:
-            j_lat = hotspot_cache[j_key][CK.latitude]
-            j_long = hotspot_cache[j_key][CK.longitude]
-            abc = abs_angle_change(i_lat, i_long, j_lat, j_long)
-            if abc > way_too_far:  # very rough distance limit
-                continue
-            distance = distanceBetweenPoint(i_lat, i_long, j_lat, j_long)
-            if distance < willingnessToTravelInMeters:
-                hotspot_cache[i_key][KW.nearby][j_key] = distance
-                hotspot_cache[j_key][KW.nearby][i_key] = distance
-            else:
-                way_too_far = min(way_too_far, 10.0 * abc)
-    return hotspot_cache
-
-
-def find_possible_locations(hotspot_cache, map_limiter: MapLimiter):
-    locations = {}
-    i = 1
-    taken = set()
-    tkey = lambda x: int(x * Settings.granularity)
-
-    def adder(i, latitude, longitude, name):
-        la = map_limiter.latitude(latitude)
-        lo = map_limiter.longitude(longitude)
-        kk = (tkey(la), tkey(lo))
-        if kk not in taken:
-            locations[f"c_{name}_{i}"] = bundle(
-                latitude=la,
-                longitude=lo,
-            )
-            taken.add(kk)
-            return i + 1
-        return i
-
-    w = lambda spread, footfall: footfall / spread
-
-    for hotspot in hotspot_cache.values():
-        hotspot_la = hotspot[CK.latitude]
-        hotspot_lo = hotspot[CK.longitude]
-        hotspot_w = w(hotspot[HK.spread], hotspot[LK.footfall])
-
-        # start collecting a cluster node
-        cluster_la = hotspot_la * hotspot_w
-        cluster_lo = hotspot_lo * hotspot_w
-        cluster_w = hotspot_w
-
-        for neighbor_key in hotspot[KW.nearby]:
-            neighbor = hotspot_cache[neighbor_key]
-            neighbor_la = neighbor[CK.latitude]
-            neighbor_lo = neighbor[CK.longitude]
-            neighbor_w = w(neighbor[HK.spread], neighbor[LK.footfall])
-
-            # add the weighted average of the two points
-            avg_la = (hotspot_la * hotspot_w + neighbor_la * neighbor_w) / (
-                hotspot_w + neighbor_w
-            )
-            avg_lo = (hotspot_lo * hotspot_w + neighbor_lo * neighbor_w) / (
-                hotspot_w + neighbor_w
-            )
-            i = adder(i, avg_la, avg_lo, "between")
-
-            # increase the clusterpoint
-            cluster_la += neighbor_la * neighbor_w
-            cluster_lo += neighbor_lo * neighbor_w
-            cluster_w += neighbor_w
-
-        # add the clusterpoint
-        cluster_la = cluster_la / cluster_w
-        cluster_lo = cluster_lo / cluster_w
-        i = adder(i, cluster_la, cluster_lo, "cluster")
-
-        # add the hotspot as a location
-        i = adder(i, hotspot_la, hotspot_lo, "hotspot")
-
-    print(f"{len(locations)} candidates")
-    return locations
 
 
 class SandboxSolver(Solver):
@@ -191,12 +85,12 @@ class SandboxSolver(Solver):
     def find_new_locations(self):
         changes = []
         remaining_types = self.remaining_types_in_order()
-        print(remaining_types)
         if len(remaining_types) == 0:
             return []
         elif len(remaining_types) == 1:
             # get those last kiosks
             self.no_remove = True
+        print(self.limits)
 
         # try to add locations
         for change in self.generate_additions(ignore=self.the_ugly):
@@ -235,14 +129,10 @@ class SandboxSolver(Solver):
                 adjust_how_many -= 1
                 if adjust_how_many <= 0:
                     break
+        return suggestions
 
-        # merge and process suggestions into the state
-        for suggestion in suggestions:
-            candidates.append(suggestion)
-            score = self.calculate(suggestion)
-            scores.append(score)
-            totals.append(get_total(score))
-
+    def another_improve_scored_candidates(self, candidates, totals, scores):
+        suggestions = []
         if (
             Settings.do_sandbox_groups
         ):  # apply the group_size highest improvements that don't intersect or are nearby
@@ -261,7 +151,7 @@ class SandboxSolver(Solver):
                     add = len(
                         [
                             key
-                            for key, location in change.items()
+                            for key, location in candidates[i].items()
                             if location[LK.locationType] == type
                         ]
                     )
@@ -287,14 +177,8 @@ class SandboxSolver(Solver):
                     # all locations grabbed
                     break
             if len(group_change) > 0:
-                candidates.append(group_change)
-                group_score = self.calculate(group_change)
-                # print("?" * 80)
-                # print(json.dumps(group_change, indent=4))
-                # print(json.dumps(group_score[SK.gameScore][SK.total], indent=4))
-                # print("=" * 80)
-                scores.append(group_score)
-                totals.append(group_score[SK.gameScore][SK.total])
+                suggestions.append(group_change)
+        return suggestions
 
     def post_improvement(self, change):
         super().post_improvement(change)
@@ -311,73 +195,6 @@ class SandboxSolver(Solver):
             for nkey, distance in nearby.items():
                 if distance < Settings.sandbox_too_near:
                     self.the_good.discard(nkey)
-
-    def tweak_locations(self, stale_progress=False):
-        # generate a set of changes
-        changes = []
-        for change in self.generate_changes():
-            changes.append(change)
-        if stale_progress:
-            map(changes.append, self.generate_swaps())
-        # for change in self.generate_swaps():
-        #     changes.append(change)
-        #     for change in self.generate_moves(self.solution[LK.locations]):
-        #         changes.append(change)
-        #     for change in self.generate_consolidation(self.solution[LK.locations]):
-        #         changes.append(change)
-
-        # score changes
-        if Settings.do_multiprocessing:
-            with Pool(4) as pool:
-                scores = pool.map(self.calculate, changes)
-        else:
-            scores = list(map(self.calculate, changes))
-
-        # process scores, extract ids that improved and total scores
-        improvements = []
-        totals = []
-        for i, score in enumerate(scores):
-            total = score[SK.gameScore][SK.total]
-            if total > self.best:  # improved total
-                improvements.append(i)
-            totals.append(total)
-
-        if (
-            Settings.do_groups and len(improvements) > 2
-        ):  # apply the group_size highest improvements that don't intersect
-            group_change = {}
-            picked = set()
-            for i in sorted(
-                improvements, key=lambda x: totals[x], reverse=True
-            ):  # the indexes of the group_size highest totals
-                if any([key in picked for key in changes[i]]):
-                    continue
-                for key in changes[i]:
-                    picked.add(key)
-                apply_change(
-                    group_change, changes[i], capped=False, no_remove=self.no_remove
-                )
-                if len(picked) >= Settings.group_size:
-                    break
-            changes.append(group_change)
-            group_score = self.calculate(group_change)
-            scores.append(group_score)
-            totals.append(group_score[SK.gameScore][SK.total])
-
-        # apply the best change
-        total = max(totals)
-        if total > self.best:
-            self.best = total
-            index = totals.index(total)
-            score = scores[index]
-            self.best_id = score[SK.gameId]
-            apply_change(
-                self.solution[LK.locations], changes[index], no_remove=self.no_remove
-            )
-            print(f"tweak: {json.dumps(changes[index], indent=4)}")
-            store(self.mapName, score)
-        else:
-            print(f"no tweak {total}")
 
     def generate_additions(self, ignore):
         types = self.remaining_types_in_order()
@@ -470,3 +287,70 @@ class SandboxSolver(Solver):
             if self.limits[type] > 0:
                 types.append(type)
         return types
+
+    def tweak_locations(self, stale_progress=False):
+        # generate a set of changes
+        changes = []
+        for change in self.generate_changes():
+            changes.append(change)
+        if stale_progress:
+            map(changes.append, self.generate_swaps())
+        # for change in self.generate_swaps():
+        #     changes.append(change)
+        #     for change in self.generate_moves(self.solution[LK.locations]):
+        #         changes.append(change)
+        #     for change in self.generate_consolidation(self.solution[LK.locations]):
+        #         changes.append(change)
+
+        # score changes
+        if Settings.do_multiprocessing:
+            with Pool(4) as pool:
+                scores = pool.map(self.calculate, changes)
+        else:
+            scores = list(map(self.calculate, changes))
+
+        # process scores, extract ids that improved and total scores
+        improvements = []
+        totals = []
+        for i, score in enumerate(scores):
+            total = score[SK.gameScore][SK.total]
+            if total > self.best:  # improved total
+                improvements.append(i)
+            totals.append(total)
+
+        if (
+            Settings.do_groups and len(improvements) > 2
+        ):  # apply the group_size highest improvements that don't intersect
+            group_change = {}
+            picked = set()
+            for i in sorted(
+                improvements, key=lambda x: totals[x], reverse=True
+            ):  # the indexes of the group_size highest totals
+                if any([key in picked for key in changes[i]]):
+                    continue
+                for key in changes[i]:
+                    picked.add(key)
+                apply_change(
+                    group_change, changes[i], capped=False, no_remove=self.no_remove
+                )
+                if len(picked) >= Settings.group_size:
+                    break
+            changes.append(group_change)
+            group_score = self.calculate(group_change)
+            scores.append(group_score)
+            totals.append(group_score[SK.gameScore][SK.total])
+
+        # apply the best change
+        total = max(totals)
+        if total > self.best:
+            self.best = total
+            index = totals.index(total)
+            score = scores[index]
+            self.best_id = score[SK.gameId]
+            apply_change(
+                self.solution[LK.locations], changes[index], no_remove=self.no_remove
+            )
+            print(f"tweak: {json.dumps(changes[index], indent=4)}")
+            store(self.mapName, score)
+        else:
+            print(f"no tweak {total}")
