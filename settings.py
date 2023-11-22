@@ -10,8 +10,6 @@ class Settings:
     starting_point = "func"
     max_stations = 2
 
-    do_multiprocessing = False
-
     do_sets = False
     do_groups = True
     group_size = 16

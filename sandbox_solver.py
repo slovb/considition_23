@@ -1,12 +1,9 @@
-import json
-from multiprocessing import Pool
-
+from typing import Dict, Generator, List
 from data_keys import (
     CoordinateKeys as CK,
     GeneralKeys as GK,
     LocationKeys as LK,
     MapKeys as MK,
-    ScoringKeys as SK,
 )
 from helper import apply_change, bundle
 from map_limiter import MapLimiter
@@ -15,7 +12,7 @@ from scoring import calculateScore
 from original_scoring import calculateScore as originalCalculateScore
 from settings import Settings, KW
 from solver import Solver
-from store import store
+from suggestion import Suggestion, STag
 
 
 class SandboxSolver(Solver):
@@ -26,22 +23,27 @@ class SandboxSolver(Solver):
         self.possible_locations = {}
         self.no_remove = False
 
-    def calculate(self, change, skip_validation=True):
-        names, inverse = temporary_names(self.solution, change)
-        return calculateScore(
-            self.mapName,
-            self.solution,
-            change,
-            self.mapEntity,
-            self.generalData,
-            self.distance_cache,
-            names,
-            inverse,
-            skip_validation=skip_validation,
+    def calculate(
+        self, suggestion: Suggestion, skip_validation=True
+    ) -> Dict[str, Dict]:
+        names, inverse = temporary_names(self.solution, suggestion.change)
+        suggestion.set_score(
+            calculateScore(
+                self.mapName,
+                self.solution,
+                suggestion.change,
+                self.mapEntity,
+                self.generalData,
+                self.distance_cache,
+                names,
+                inverse,
+                skip_validation=skip_validation,
+            )
         )
+        return suggestion.score
 
-    def calculate_verification(self):
-        solution = {LK.locations: {}}
+    def calculate_verification(self) -> Dict[str, Dict]:
+        solution: Dict[str, Dict] = {LK.locations: {}}
         fields = [
             LK.f3100Count,
             LK.f9100Count,
@@ -59,7 +61,7 @@ class SandboxSolver(Solver):
             self.mapName, solution, self.mapEntity, self.generalData
         )
 
-    def initialize(self):
+    def initialize(self) -> None:
         super().initialize()
         self.map_limiter = MapLimiter(
             latitudeMin=self.mapEntity[MK.border][MK.latitudeMin],
@@ -70,7 +72,7 @@ class SandboxSolver(Solver):
         self.update_limits()
         self.rebuild_cache()
 
-    def rebuild_cache(self):
+    def rebuild_cache(self) -> None:
         self.hotspot_cache = build_hotspot_cache(
             mapEntity=self.mapEntity, generalData=self.generalData
         )
@@ -79,10 +81,10 @@ class SandboxSolver(Solver):
         )
         self.rebuild_distance_cache(self.possible_locations)
 
-    def find_candidates(self):
+    def find_suggestions(self) -> List[Suggestion]:
         return self.find_new_locations()
 
-    def find_new_locations(self):
+    def find_new_locations(self) -> List[Suggestion]:
         changes = []
         remaining_types = self.remaining_types_in_order()
         if len(remaining_types) == 0:
@@ -93,46 +95,51 @@ class SandboxSolver(Solver):
         print(self.limits)
 
         # try to add locations
-        for change in self.generate_additions(ignore=self.the_ugly):
+        for change in self.generate_additions():
             changes.append(change)
 
         return changes
 
-    def improve_scored_candidates(self, candidates, totals, scores):
+    def improve_scored_suggestions(
+        self, scored_suggestions: List[Suggestion]
+    ) -> List[Suggestion]:
         suggestions = []
 
         remaining_types = self.remaining_types_in_order()
         # try adjustments of the best additions
         adjust_how_many = Settings.sandbox_explore_how_many
         if adjust_how_many > 0:
-            for i in sorted(
-                range(len(candidates)), key=lambda x: totals[x], reverse=True
+            for scored_suggestion in sorted(
+                scored_suggestions, key=lambda x: x.total, reverse=True
             ):
-                change = candidates[i]
+                if scored_suggestion.tag != STag.add:
+                    continue
                 for type in remaining_types:
                     for f_count in [(1, 0), (0, 1), (1, 1)]:
-                        suggestion = {}
-                        for loc_key, location in change.items():
+                        change = {}
+                        for loc_key, location in scored_suggestion.change.items():
                             if (
                                 type == location[LK.locationType]
                                 and f_count[0] == location[LK.f3100Count]
                                 and f_count[1] == location[LK.f9100Count]
                             ):  # no repeats
                                 continue
-                            suggestion[loc_key] = bundle(
+                            change[loc_key] = bundle(
                                 latitude=location[CK.latitude],
                                 longitude=location[CK.longitude],
                                 type=type,
                                 f3=f_count[0],
                                 f9=f_count[1],
                             )
-                        suggestions.append(suggestion)
+                        suggestions.append(Suggestion(change=change, tag=STag.change))
                 adjust_how_many -= 1
                 if adjust_how_many <= 0:
                     break
         return suggestions
 
-    def another_improve_scored_candidates(self, candidates, totals, scores):
+    def another_improve_scored_suggestions(
+        self, scored_suggestions: List[Suggestion]
+    ) -> List[Suggestion]:
         suggestions = []
 
         # tweaks to be separated later
@@ -151,22 +158,22 @@ class SandboxSolver(Solver):
         if (
             Settings.do_sandbox_groups
         ):  # apply the group_size highest improvements that don't intersect or are nearby
-            group_change = {}
+            group_change: Dict[str, Dict] = {}
             picked = set()
             pick_count = 0
             counts = {key: 0 for key in self.limits}
-            for i in sorted(
-                range(len(candidates)), key=lambda x: totals[x], reverse=True
+            for scored_suggestion in sorted(
+                scored_suggestions, key=lambda x: x.total, reverse=True
             ):
                 # looping through the indexes of the highest totals
-                if any([key in picked for key in candidates[i]]):
+                if any([key in picked for key in scored_suggestion.change]):
                     continue
                 too_much = False
                 for type, count in counts.items():
                     add = len(
                         [
                             key
-                            for key, location in candidates[i].items()
+                            for key, location in scored_suggestion.change.items()
                             if location[LK.locationType] == type
                         ]
                     )
@@ -175,7 +182,7 @@ class SandboxSolver(Solver):
                         break
                 if too_much:
                     continue
-                for key, location in candidates[i].items():
+                for key, location in scored_suggestion.change.items():
                     picked.add(key)
                     pick_count += 1
                     counts[location[LK.locationType]] += 1
@@ -183,7 +190,10 @@ class SandboxSolver(Solver):
                         if distance < Settings.sandbox_groups_distance_limit:
                             picked.add(nkey)  # don't need nearby
                 apply_change(
-                    group_change, candidates[i], capped=False, no_remove=self.no_remove
+                    group_change,
+                    scored_suggestion.change,
+                    capped=False,
+                    no_remove=self.no_remove,
                 )
                 if pick_count >= Settings.sandbox_group_size:
                     # grabbed enough locations
@@ -192,11 +202,11 @@ class SandboxSolver(Solver):
                     # all locations grabbed
                     break
             if len(group_change) > 0:
-                suggestions.append(group_change)
+                suggestions.append(Suggestion(change=group_change, tag=STag.group))
         return suggestions
 
-    def post_improvement(self, change):
-        super().post_improvement(change)
+    def post_improvement(self, suggestion: Suggestion):
+        super().post_improvement(suggestion)
         # Verification step if feeling unsure
         # verification = self.calculate_verification()
         # ver_total = verification[SK.gameScore][SK.total]
@@ -205,13 +215,13 @@ class SandboxSolver(Solver):
         #     raise SystemExit(f"!!!!!! {round(total, 2)}")
 
         self.update_limits()
-        for key in change:
+        for key in suggestion.change:
             nearby = self.distance_cache[key]
             for nkey, distance in nearby.items():
                 if distance < Settings.sandbox_too_near:
                     self.the_good.discard(nkey)
 
-    def generate_additions(self, ignore):
+    def generate_additions(self) -> Generator[Suggestion, None, None]:
         types = self.remaining_types_in_order()
         if len(types) == 0:
             return
@@ -219,7 +229,7 @@ class SandboxSolver(Solver):
         candidates = (
             (key, location)
             for key, location in self.possible_locations.items()
-            if key not in ignore
+            if key not in self.the_ugly
         )
         f3 = 1
         f9 = 0
@@ -235,59 +245,65 @@ class SandboxSolver(Solver):
         for key, location in candidates:
             if key in self.solution:
                 continue
-            yield {
-                key: bundle(
-                    latitude=location[CK.latitude],
-                    longitude=location[CK.longitude],
-                    type=type,
-                    f3=f3,
-                    f9=f9,
-                )
-            }
+            yield Suggestion(
+                change={
+                    key: bundle(
+                        latitude=location[CK.latitude],
+                        longitude=location[CK.longitude],
+                        type=type,
+                        f3=f3,
+                        f9=f9,
+                    )
+                },
+                tag=STag.add,
+            )
 
-    def generate_changes(self):
+    def generate_changes(self) -> Generator[Suggestion, None, None]:
         locations = self.solution[LK.locations]
         for key, location in locations.items():
             f3Count = location[LK.f3100Count]
             f9Count = location[LK.f9100Count]
             if f3Count > 0:  # decrease f3100
-                yield {key: bundle(-1, 0)}
+                yield Suggestion(change={key: bundle(-1, 0)}, tag=STag.change)
             if f3Count > 0 and f9Count < Settings.max_stations:  # f3100 -> f9100
-                yield {key: bundle(-1, 1)}
+                yield Suggestion(change={key: bundle(-1, 1)}, tag=STag.change)
             if f3Count > 1 and f9Count < Settings.max_stations:  # 2 f3100 -> f9100
-                yield {key: bundle(-2, 1)}
+                yield Suggestion(change={key: bundle(-2, 1)}, tag=STag.change)
             if f9Count > 0 and f3Count < Settings.max_stations:  # f9100 -> f3100
-                yield {key: bundle(1, -1)}
+                yield Suggestion(change={key: bundle(1, -1)}, tag=STag.change)
             if f3Count < Settings.max_stations:  # increase f3100
-                yield {key: bundle(1, 0)}
+                yield Suggestion(change={key: bundle(1, 0)}, tag=STag.change)
             if f9Count < Settings.max_stations:  # increase f9100
-                yield {key: bundle(0, 1)}
+                yield Suggestion(change={key: bundle(0, 1)}, tag=STag.change)
 
-    def generate_swaps(self):
+    def generate_swaps(self) -> Generator[Suggestion, None, None]:
         locations = self.solution[LK.locations]
         largeType = self.location_type[GK.groceryStoreLarge]
         for key, location in locations.items():
             if location[LK.locationType] == largeType:
                 for k2, l2 in locations.items():
                     if l2[LK.locationType] != largeType:
-                        yield {
-                            key: bundle(
-                                latitude=l2[CK.latitude], longitude=l2[CK.longitude]
-                            ),
-                            k2: bundle(
-                                latitude=location[CK.latitude],
-                                longitude=location[CK.longitude],
-                            ),
-                        }
+                        yield Suggestion(
+                            change={
+                                key: bundle(
+                                    latitude=l2[CK.latitude], longitude=l2[CK.longitude]
+                                ),
+                                k2: bundle(
+                                    latitude=location[CK.latitude],
+                                    longitude=location[CK.longitude],
+                                ),
+                            },
+                            tag=STag.change,
+                        )
 
-    def update_limits(self):
+    def update_limits(self) -> None:
         limits = {self.location_type[key]: val for key, val in KW.limits.items()}
         for location in self.solution[LK.locations].values():
             type = location[LK.locationType]
             limits[type] -= 1
         self.limits = limits
 
-    def remaining_types_in_order(self):
+    def remaining_types_in_order(self) -> List[str]:
         # order of salesVolume
         keys_in_order = [
             GK.groceryStoreLarge,
