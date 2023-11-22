@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import uuid
 
 from data_keys import (
@@ -25,6 +26,7 @@ def calculateScore(
     inverse_sandbox_names=None,
     skip_validation=False,
     round_total=False,
+    hotspot_footfall_cache=None,
 ):
     scoredSolution = {
         SK.gameId: str(uuid.uuid4()),
@@ -111,7 +113,10 @@ def calculateScore(
             inverse_sandbox_names,
         )
         scoredSolution[LK.locations] = calculateFootfall(
-            scoredSolution[LK.locations], mapEntity, inverse_sandbox_names
+            scoredSolution[LK.locations],
+            mapEntity,
+            inverse_sandbox_names,
+            hotspot_footfall_cache,
         )
 
     scoredSolution[LK.locations] = divideFootfall(
@@ -206,11 +211,11 @@ def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> float:
     Δφ = (lat_2 - lat_1) * math.pi / 180
     Δλ = (long_2 - long_1) * math.pi / 180
 
-    a = math.sin(Δφ / 2) * math.sin(Δφ / 2) + math.cos(φ1) * math.cos(φ2) * math.sin(
+    a = np.sin(Δφ / 2) * np.sin(Δφ / 2) + np.cos(φ1) * np.cos(φ2) * np.sin(
         Δλ / 2
-    ) * math.sin(Δλ / 2)
+    ) * np.sin(Δλ / 2)
 
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
 
     d = R * c
 
@@ -248,10 +253,9 @@ def distributeSales(with_, without, generalData, distance_cache):
     return with_
 
 
-hotspot_footfall_cache = {}
-
-
-def calculateFootfall(locations, mapEntity, inverse_sandbox_names):
+def calculateFootfall(
+    locations, mapEntity, inverse_sandbox_names, hotspot_footfall_cache
+):
     maxFootfall = 0
     for keyLoc in locations:
         loc = locations[keyLoc]

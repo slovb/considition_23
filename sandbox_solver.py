@@ -20,6 +20,7 @@ class SandboxSolver(Solver):
         super().__init__(mapName=mapName, mapEntity=mapEntity, generalData=generalData)
 
         self.hotspot_cache: Dict = {}
+        self.hotspot_footfall_cache: Dict = {}
         self.possible_locations: Dict[str, Dict] = {}
         self.no_remove = False
 
@@ -30,15 +31,16 @@ class SandboxSolver(Solver):
         return ScoredSuggestion(
             suggestion=suggestion,
             score=calculateScore(
-                self.mapName,
-                self.solution,
-                suggestion.change,
-                self.mapEntity,
-                self.generalData,
-                self.distance_cache,
-                names,
-                inverse,
+                mapName=self.mapName,
+                solution=self.solution,
+                change=suggestion.change,
+                mapEntity=self.mapEntity,
+                generalData=self.generalData,
+                distance_cache=self.distance_cache,
+                sandbox_names=names,
+                inverse_sandbox_names=inverse,
                 skip_validation=skip_validation,
+                hotspot_footfall_cache=self.hotspot_footfall_cache,
             ),
         )
 
@@ -118,7 +120,7 @@ class SandboxSolver(Solver):
                 if scored_suggestion.tag != STag.add:
                     continue
                 for type in remaining_types:
-                    for f_count in [(1, 0), (0, 1), (1, 1)]:
+                    for f_count in [(1, 0), (2, 0), (0, 1), (1, 1)]:
                         change = {}
                         for loc_key, location in scored_suggestion.change.items():
                             if (
@@ -242,11 +244,11 @@ class SandboxSolver(Solver):
         f3 = 1
         f9 = 0
         if type == self.location_type[GK.groceryStoreLarge]:
-            f3 = 1
-            f9 = 1
+            f3 = 2
+            f9 = 0
         elif type == self.location_type[GK.groceryStore]:
-            f3 = 0
-            f9 = 1
+            f3 = 2
+            f9 = 0
         elif type == self.location_type[GK.kiosk]:
             f3 = 0
             f9 = 0

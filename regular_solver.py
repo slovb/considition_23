@@ -61,8 +61,11 @@ class RegularSolver(Solver):
             f3 = 1
             f9 = 0
             if type == self.location_type[GK.groceryStoreLarge]:
-                f3 = 1
-                f9 = 1
+                f3 = 2
+                f9 = 0
+            elif type == self.location_type[GK.groceryStore]:
+                f3 = 2
+                f9 = 0
             solution[LK.locations][name] = bundle(f3=f3, f9=f9)
         return solution
 

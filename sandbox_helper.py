@@ -13,12 +13,12 @@ from solver import abs_angle_change
 
 
 def build_hotspot_cache(mapEntity: Dict, generalData: Dict) -> Dict:
-    ############ TODO USE SPREAD DISTANCE NOT JUST WILLINGNESS (maybe both)
     hotspots = mapEntity[HK.hotspots]
     hotspot_cache = {}
     keys = []
+    way_too_far = 10.0
+    guts_multiplier = 10.0
     willingnessToTravelInMeters = generalData[GK.willingnessToTravelInMeters]
-    way_too_far = 1.0
     for key, hotspot in enumerate(hotspots):
         keys.append(key)
         hotspot_cache[key] = hotspot
@@ -26,18 +26,21 @@ def build_hotspot_cache(mapEntity: Dict, generalData: Dict) -> Dict:
     for i, i_key in enumerate(keys[:-1]):
         i_lat = hotspot_cache[i_key][CK.latitude]
         i_long = hotspot_cache[i_key][CK.longitude]
+        i_spread = hotspot_cache[i_key][HK.spread]
         for j_key in keys[i + 1 :]:
             j_lat = hotspot_cache[j_key][CK.latitude]
             j_long = hotspot_cache[j_key][CK.longitude]
+            j_spread = hotspot_cache[j_key][HK.spread]
             abc = abs_angle_change(i_lat, i_long, j_lat, j_long)
             if abc > way_too_far:  # very rough distance limit
                 continue
             distance = distanceBetweenPoint(i_lat, i_long, j_lat, j_long)
-            if distance < willingnessToTravelInMeters:
+            # if distance < max(i_spread, j_spread):  # + willingnessToTravelInMeters:
+            if distance < i_spread + j_spread + willingnessToTravelInMeters:
                 hotspot_cache[i_key][KW.nearby][j_key] = distance
                 hotspot_cache[j_key][KW.nearby][i_key] = distance
             else:
-                way_too_far = min(way_too_far, 10.0 * abc)
+                way_too_far = min(way_too_far, guts_multiplier * abc)
     return hotspot_cache
 
 
@@ -69,6 +72,9 @@ def find_possible_locations(
         hotspot_lo = hotspot[CK.longitude]
         hotspot_w = w(hotspot[HK.spread], hotspot[LK.footfall])
 
+        # add the hotspot as a location
+        i = adder(i, hotspot_la, hotspot_lo, "hotspot")
+
         # start collecting a cluster node
         cluster_la = hotspot_la * hotspot_w
         cluster_lo = hotspot_lo * hotspot_w
@@ -98,9 +104,6 @@ def find_possible_locations(
         cluster_la = cluster_la / cluster_w
         cluster_lo = cluster_lo / cluster_w
         i = adder(i, cluster_la, cluster_lo, "cluster")
-
-        # add the hotspot as a location
-        i = adder(i, hotspot_la, hotspot_lo, "hotspot")
 
     print(f"{len(locations)} candidates")
     return locations

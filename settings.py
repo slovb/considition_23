@@ -4,6 +4,7 @@ from data_keys import GeneralKeys as GK
 
 @dataclass
 class Settings:
+    multiprocessing = False
     cache_folder = "cache"
     log_folder = "log"
     game_folder = "my_games"
@@ -15,13 +16,13 @@ class Settings:
     group_size = 16
     groups_distance_limit = 100.0
 
-    sandbox_explore_how_many = 4
+    sandbox_explore_how_many = 16
     do_sandbox_groups = True
-    sandbox_group_size = 2
-    sandbox_groups_distance_limit = 100.0
+    sandbox_group_size = 8
+    sandbox_groups_distance_limit = 10.0
     do_sandbox_sets = True
-    sandbox_too_near = 1.0
-    granularity = 1e5
+    sandbox_too_near = 10.0
+    granularity = 1e4
 
 
 @dataclass

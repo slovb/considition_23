@@ -1,3 +1,4 @@
+from multiprocessing import Pool
 from abc import ABC, abstractmethod
 import json
 from typing import Callable, Dict, Generator, Iterable, List, Set
@@ -188,7 +189,11 @@ class Solver(ABC):
     def score_suggestions(
         self, suggestions: Iterable[Suggestion]
     ) -> List[ScoredSuggestion]:
-        scored_suggestions = list(map(self.calculate, suggestions))
+        if Settings.multiprocessing:
+            with Pool(4) as p:
+                scored_suggestions = p.map(self.calculate, suggestions)
+        else:
+            scored_suggestions = list(map(self.calculate, suggestions))
         for scored_suggestion in scored_suggestions:
             if scored_suggestion.total > self.best:
                 for key in scored_suggestion.change:
