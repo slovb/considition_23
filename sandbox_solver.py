@@ -99,9 +99,10 @@ class SandboxSolver(Solver):
         return changes
 
     def improve_scored_candidates(self, candidates, totals, scores):
+        suggestions = []
+
         remaining_types = self.remaining_types_in_order()
         # try adjustments of the best additions
-        suggestions = []
         adjust_how_many = Settings.sandbox_explore_how_many
         if adjust_how_many > 0:
             for i in sorted(
@@ -133,6 +134,20 @@ class SandboxSolver(Solver):
 
     def another_improve_scored_candidates(self, candidates, totals, scores):
         suggestions = []
+
+        # tweaks to be separated later
+        for suggestion in self.generate_changes():
+            suggestions.append(suggestion)
+        if self.stale_progress:
+            for suggestion in self.generate_swaps():
+                suggestions.append(suggestion)
+            # for suggestion in self.generate_moves(self.solution[LK.locations])():
+            #     suggestions.append(suggestion)
+            # for suggestion in self.generate_consolidation(
+            #     self.solution[LK.locations]
+            # )():
+            #     suggestions.append(suggestion)
+
         if (
             Settings.do_sandbox_groups
         ):  # apply the group_size highest improvements that don't intersect or are nearby
@@ -287,70 +302,3 @@ class SandboxSolver(Solver):
             if self.limits[type] > 0:
                 types.append(type)
         return types
-
-    def tweak_locations(self, stale_progress=False):
-        # generate a set of changes
-        changes = []
-        for change in self.generate_changes():
-            changes.append(change)
-        if stale_progress:
-            map(changes.append, self.generate_swaps())
-        # for change in self.generate_swaps():
-        #     changes.append(change)
-        #     for change in self.generate_moves(self.solution[LK.locations]):
-        #         changes.append(change)
-        #     for change in self.generate_consolidation(self.solution[LK.locations]):
-        #         changes.append(change)
-
-        # score changes
-        if Settings.do_multiprocessing:
-            with Pool(4) as pool:
-                scores = pool.map(self.calculate, changes)
-        else:
-            scores = list(map(self.calculate, changes))
-
-        # process scores, extract ids that improved and total scores
-        improvements = []
-        totals = []
-        for i, score in enumerate(scores):
-            total = score[SK.gameScore][SK.total]
-            if total > self.best:  # improved total
-                improvements.append(i)
-            totals.append(total)
-
-        if (
-            Settings.do_groups and len(improvements) > 2
-        ):  # apply the group_size highest improvements that don't intersect
-            group_change = {}
-            picked = set()
-            for i in sorted(
-                improvements, key=lambda x: totals[x], reverse=True
-            ):  # the indexes of the group_size highest totals
-                if any([key in picked for key in changes[i]]):
-                    continue
-                for key in changes[i]:
-                    picked.add(key)
-                apply_change(
-                    group_change, changes[i], capped=False, no_remove=self.no_remove
-                )
-                if len(picked) >= Settings.group_size:
-                    break
-            changes.append(group_change)
-            group_score = self.calculate(group_change)
-            scores.append(group_score)
-            totals.append(group_score[SK.gameScore][SK.total])
-
-        # apply the best change
-        total = max(totals)
-        if total > self.best:
-            self.best = total
-            index = totals.index(total)
-            score = scores[index]
-            self.best_id = score[SK.gameId]
-            apply_change(
-                self.solution[LK.locations], changes[index], no_remove=self.no_remove
-            )
-            print(f"tweak: {json.dumps(changes[index], indent=4)}")
-            store(self.mapName, score)
-        else:
-            print(f"no tweak {total}")
