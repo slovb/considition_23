@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import json
 from multiprocessing import Pool
 
 from data_keys import (
@@ -192,6 +193,10 @@ class Solver(ABC):
     def improve_scored_candidates(self, candidates, totals, scores):
         pass
 
+    @abstractmethod
+    def post_improvement(self, change):
+        pass
+
     def solve(self):
         while True:
             if self.do_sets:
@@ -212,9 +217,16 @@ class Solver(ABC):
 
             # process scores, extract total scores
             totals = []
-            for score in scores:
+            for i, score in enumerate(scores):
                 total = get_total(score)
                 totals.append(total)
+
+                if total > self.best:
+                    for key in candidates[i]:
+                        self.the_good.add(key)
+                else:
+                    for key in candidates[i]:
+                        self.the_bad.add(key)
 
             # safety check if too much ignoring has happened
             if len(totals) == 0:
@@ -233,11 +245,14 @@ class Solver(ABC):
             if total > self.best:
                 self.best = total
                 index = totals.index(total)
+                candidate = candidates[index]
                 score = scores[index]
                 self.best_id = get_game_id(score)
-                apply_change(self.solution[LK.locations], candidates[index])
+                print(f"candidate: {json.dumps(candidate, indent=4)}")
+                apply_change(self.solution[LK.locations], candidate)
                 store(self.mapName, score)
                 self.stale_progress = False
+                self.post_improvement(candidate)
             elif self.do_sets:
                 self.do_sets = False
             elif not self.stale_progress:

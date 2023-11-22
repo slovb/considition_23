@@ -13,7 +13,7 @@ from helper import apply_change, bundle, KW, temporary_names
 from scoring import distanceBetweenPoint, calculateScore
 from original_scoring import calculateScore as originalCalculateScore
 from settings import Settings
-from solver import Solver, abs_angle_change
+from solver import Solver, abs_angle_change, get_total
 from store import store
 
 
@@ -186,91 +186,34 @@ class SandboxSolver(Solver):
         self.rebuild_distance_cache(self.possible_locations)
 
     def find_candidates(self):
-        return super().find_candidates()
+        return self.find_new_locations()
 
     def find_new_locations(self):
-        pass
-
-    def improve_scored_candidates(self, candidates, totals, scores):
-        return super().improve_scored_candidates(candidates, totals, scores)
-
-    def solve(self):
-        the_good = set()
-        the_bad = set()
-        the_ugly = set()
-
-        do_sets = Settings.do_sandbox_sets
-
-        old_best = self.best
-
-        stale_progress = False
-
-        while True:
-            print(self.limits)
-            if do_sets:
-                the_ugly = the_bad.difference(the_good)  # these will be ignored
-                the_good = set()
-            else:
-                the_ugly = set()
-
-            #
-            self.add_location(the_good=the_good, the_bad=the_bad, ignore=the_ugly)
-            # nr = self.no_remove
-            # self.no_remove = False
-            self.tweak_locations(stale_progress=stale_progress)
-            # self.no_remove = nr
-            if self.best > old_best:
-                old_best = self.best
-                stale_progress = False
-            elif do_sets:
-                do_sets = False
-            elif not stale_progress:
-                stale_progress = True
-            else:
-                break
-            print("-" * 80)
-
-    def add_location(self, the_good, the_bad, ignore):
-        print(f"len ignore {len(ignore)}")
+        changes = []
         remaining_types = self.remaining_types_in_order()
+        print(remaining_types)
         if len(remaining_types) == 0:
-            return
+            return []
         elif len(remaining_types) == 1:
-            self.no_remove = True  # get those last kiosks
+            # get those last kiosks
+            self.no_remove = True
 
         # try to add locations
-        changes = []
-        for change in self.generate_additions(ignore=ignore):
+        for change in self.generate_additions(ignore=self.the_ugly):
             changes.append(change)
 
-        # score additions
-        if Settings.do_multiprocessing:
-            with Pool(4) as pool:
-                scores = pool.map(self.calculate, changes)
-        else:
-            scores = list(map(self.calculate, changes))
+        return changes
 
-        # process scores, extract ids that improved and total scores
-        totals = []
-        extra_data = []
-        for i, score in enumerate(scores):
-            total = score[SK.gameScore][SK.total]
-            if total > self.best:
-                for key in changes[i]:
-                    the_good.add(key)
-            else:
-                for key in changes[i]:
-                    the_bad.add(key)
-            totals.append(total)
-            extra_data.append(score[SK.gameScore][SK.earnings])
-        print(len(the_good), len(the_bad))
-
+    def improve_scored_candidates(self, candidates, totals, scores):
+        remaining_types = self.remaining_types_in_order()
         # try adjustments of the best additions
         suggestions = []
         adjust_how_many = Settings.sandbox_explore_how_many
         if adjust_how_many > 0:
-            for i in sorted(range(len(changes)), key=lambda x: totals[x], reverse=True):
-                change = changes[i]
+            for i in sorted(
+                range(len(candidates)), key=lambda x: totals[x], reverse=True
+            ):
+                change = candidates[i]
                 for type in remaining_types:
                     for f_count in [(1, 0), (0, 1), (1, 1)]:
                         suggestion = {}
@@ -295,11 +238,10 @@ class SandboxSolver(Solver):
 
         # merge and process suggestions into the state
         for suggestion in suggestions:
-            changes.append(suggestion)
+            candidates.append(suggestion)
             score = self.calculate(suggestion)
             scores.append(score)
-            totals.append(score[SK.gameScore][SK.total])
-            extra_data.append(score[SK.gameScore][SK.earnings])
+            totals.append(get_total(score))
 
         if (
             Settings.do_sandbox_groups
@@ -308,9 +250,11 @@ class SandboxSolver(Solver):
             picked = set()
             pick_count = 0
             counts = {key: 0 for key in self.limits}
-            for i in sorted(range(len(changes)), key=lambda x: totals[x], reverse=True):
+            for i in sorted(
+                range(len(candidates)), key=lambda x: totals[x], reverse=True
+            ):
                 # looping through the indexes of the highest totals
-                if any([key in picked for key in changes[i]]):
+                if any([key in picked for key in candidates[i]]):
                     continue
                 too_much = False
                 for type, count in counts.items():
@@ -326,7 +270,7 @@ class SandboxSolver(Solver):
                         break
                 if too_much:
                     continue
-                for key, location in changes[i].items():
+                for key, location in candidates[i].items():
                     picked.add(key)
                     pick_count += 1
                     counts[location[LK.locationType]] += 1
@@ -334,7 +278,7 @@ class SandboxSolver(Solver):
                         if distance < Settings.sandbox_groups_distance_limit:
                             picked.add(nkey)  # don't need nearby
                 apply_change(
-                    group_change, changes[i], capped=False, no_remove=self.no_remove
+                    group_change, candidates[i], capped=False, no_remove=self.no_remove
                 )
                 if pick_count >= Settings.sandbox_group_size:
                     # grabbed enough locations
@@ -343,7 +287,7 @@ class SandboxSolver(Solver):
                     # all locations grabbed
                     break
             if len(group_change) > 0:
-                changes.append(group_change)
+                candidates.append(group_change)
                 group_score = self.calculate(group_change)
                 # print("?" * 80)
                 # print(json.dumps(group_change, indent=4))
@@ -351,40 +295,22 @@ class SandboxSolver(Solver):
                 # print("=" * 80)
                 scores.append(group_score)
                 totals.append(group_score[SK.gameScore][SK.total])
-                extra_data.append(score[SK.gameScore][SK.earnings])
 
-        if len(totals) == 0:  # safety check due to ignore
-            return
+    def post_improvement(self, change):
+        super().post_improvement(change)
+        # Verification step if feeling unsure
+        # verification = self.calculate_verification()
+        # ver_total = verification[SK.gameScore][SK.total]
+        # print(f"verification total {ver_total}")
+        # if ver_total != round(total, 2):
+        #     raise SystemExit(f"!!!!!! {round(total, 2)}")
 
-        # apply the best change
-        total = max(totals)
-        if total >= self.best:
-            self.best = total
-            index = totals.index(total)
-            print(extra_data[index], max(extra_data), min(extra_data))
-            score = scores[index]
-            self.best_id = score[SK.gameId]
-            apply_change(
-                self.solution[LK.locations], changes[index], no_remove=self.no_remove
-            )
-            print(f"addition: {json.dumps(changes[index], indent=4)}")
-            store(self.mapName, score)
-
-            # Verification step if feeling unsure
-            # verification = self.calculate_verification()
-            # ver_total = verification[SK.gameScore][SK.total]
-            # print(f"verification total {ver_total}")
-            # if ver_total != round(total, 2):
-            #     raise SystemExit(f"!!!!!! {round(total, 2)}")
-
-            self.update_limits()
-            for key in changes[index]:
-                nearby = self.distance_cache[key]
-                for nkey, distance in nearby.items():
-                    if distance < Settings.sandbox_too_near:
-                        the_good.discard(nkey)
-        else:
-            print(f"no additions {total}")
+        self.update_limits()
+        for key in change:
+            nearby = self.distance_cache[key]
+            for nkey, distance in nearby.items():
+                if distance < Settings.sandbox_too_near:
+                    self.the_good.discard(nkey)
 
     def tweak_locations(self, stale_progress=False):
         # generate a set of changes

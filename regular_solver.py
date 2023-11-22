@@ -99,14 +99,8 @@ class RegularSolver(Solver):
         # process totals, extract ids that improved
         improvements = []
         for i, total in enumerate(totals):
-            if total > self.best:  # improved total
+            if total > self.best:
                 improvements.append(i)
-                if self.do_sets:
-                    for key in candidates[i]:
-                        self.the_good.add(key)
-            elif self.do_sets:  # not improved total
-                for key in candidates[i]:
-                    self.the_bad.add(key)
 
         # apply the group_size highest improvements that don't interact
         if Settings.do_groups and len(improvements) > 2:
@@ -131,3 +125,6 @@ class RegularSolver(Solver):
             group_score = self.calculate(group_change)
             scores.append(group_score)
             totals.append(get_total(group_score))
+
+    def post_improvement(self, change):
+        return super().post_improvement(change)
