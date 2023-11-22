@@ -12,7 +12,7 @@ from scoring import calculateScore
 from original_scoring import calculateScore as originalCalculateScore
 from settings import Settings, KW
 from solver import Solver
-from suggestion import Suggestion, STag
+from suggestion import ScoredSuggestion, Suggestion, STag
 
 
 class SandboxSolver(Solver):
@@ -25,10 +25,11 @@ class SandboxSolver(Solver):
 
     def calculate(
         self, suggestion: Suggestion, skip_validation=True
-    ) -> Dict[str, Dict]:
+    ) -> ScoredSuggestion:
         names, inverse = temporary_names(self.solution, suggestion.change)
-        suggestion.set_score(
-            calculateScore(
+        return ScoredSuggestion(
+            suggestion=suggestion,
+            score=calculateScore(
                 self.mapName,
                 self.solution,
                 suggestion.change,
@@ -38,9 +39,8 @@ class SandboxSolver(Solver):
                 names,
                 inverse,
                 skip_validation=skip_validation,
-            )
+            ),
         )
-        return suggestion.score
 
     def calculate_verification(self) -> Dict[str, Dict]:
         solution: Dict[str, Dict] = {LK.locations: {}}
@@ -101,7 +101,7 @@ class SandboxSolver(Solver):
         return changes
 
     def improve_scored_suggestions(
-        self, scored_suggestions: List[Suggestion]
+        self, scored_suggestions: List[ScoredSuggestion]
     ) -> List[Suggestion]:
         suggestions = []
 
@@ -138,7 +138,7 @@ class SandboxSolver(Solver):
         return suggestions
 
     def another_improve_scored_suggestions(
-        self, scored_suggestions: List[Suggestion]
+        self, scored_suggestions: List[ScoredSuggestion]
     ) -> List[Suggestion]:
         suggestions = []
 
@@ -205,7 +205,7 @@ class SandboxSolver(Solver):
                 suggestions.append(Suggestion(change=group_change, tag=STag.group))
         return suggestions
 
-    def post_improvement(self, suggestion: Suggestion):
+    def post_improvement(self, suggestion: ScoredSuggestion):
         super().post_improvement(suggestion)
         # Verification step if feeling unsure
         # verification = self.calculate_verification()

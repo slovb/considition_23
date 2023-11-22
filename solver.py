@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import json
-from typing import Dict, List, Set
+from typing import Dict, Generator, List, Set
 
 from data_keys import (
     CoordinateKeys as CK,
@@ -12,7 +12,7 @@ from helper import apply_change, bundle
 from scoring import distanceBetweenPoint
 from settings import Settings
 from store import store
-from suggestion import Suggestion, STag
+from suggestion import ScoredSuggestion, Suggestion, STag
 
 
 def abs_angle_change(la1: float, lo1: float, la2: float, lo2: float) -> float:
@@ -44,23 +44,23 @@ class Solver(ABC):
 
     @abstractmethod
     def improve_scored_suggestions(
-        self, scored_suggestions: List[Suggestion]
+        self, scored_suggestions: List[ScoredSuggestion]
     ) -> List[Suggestion]:
         return []
 
     @abstractmethod
     def another_improve_scored_suggestions(
-        self, scored_suggestions: List[Suggestion]
+        self, scored_suggestions: List[ScoredSuggestion]
     ) -> List[Suggestion]:
         return []
 
     @abstractmethod
-    def post_improvement(self, change: Suggestion) -> None:
+    def post_improvement(self, change: ScoredSuggestion) -> None:
         pass
 
     @abstractmethod
-    def calculate(self, suggestion: Suggestion) -> Dict[str, Dict]:
-        return {}
+    def calculate(self, suggestion: Suggestion) -> ScoredSuggestion:
+        pass
 
     def initialize(self) -> None:
         self.location_type = {}
@@ -96,8 +96,9 @@ class Solver(ABC):
                 else:
                     way_too_far = min(way_too_far, 10.0 * abc)
 
-    def generate_moves(self, locations: Dict[str, Dict]):
-        # -> Generator[Suggestion]
+    def generate_moves(
+        self, locations: Dict[str, Dict]
+    ) -> Generator[Suggestion, None, None]:
         for main_key in locations:
             main_location = self.solution[LK.locations].get(main_key)
             if (
@@ -145,8 +146,7 @@ class Solver(ABC):
                         change[sub_key] = bundle(-1, 0)
                     yield Suggestion(change=change, tag=STag.change)
 
-    def generate_consolidation(self, locations):
-        #  -> Generator[Suggestion]
+    def generate_consolidation(self, locations) -> Generator[Suggestion, None, None]:
         for main_key in locations:
             main_location = self.solution[LK.locations].get(main_key)
             if (
@@ -157,15 +157,15 @@ class Solver(ABC):
                 continue
             nearby = [
                 key
-                for key in self.distance_cache.get(main_key)
+                for key in self.distance_cache[main_key]
                 if key in self.solution[LK.locations]
             ]
             if len(nearby) < 2:
                 continue
             for i, sub_1_key in enumerate(nearby[:-1]):
-                sub_1_loc = self.solution[LK.locations].get(sub_1_key)
+                sub_1_loc = self.solution[LK.locations][sub_1_key]
                 for sub_2_key in nearby[i + 1 :]:
-                    sub_2_loc = self.solution[LK.locations].get(sub_2_key)
+                    sub_2_loc = self.solution[LK.locations][sub_2_key]
                     changes = []
                     if (
                         main_location is None
@@ -195,20 +195,18 @@ class Solver(ABC):
                             change[sub_2_key] = bundle(-1, 0)
                         yield Suggestion(change=change, tag=STag.change)
 
-    def score_suggestions(self, suggestions: List[Suggestion]) -> List[Suggestion]:
-        # if Settings.do_multiprocessing:
-        #     with Pool(4) as pool:
-        #         pool.map(self.calculate, candidates)
-        # else:
-        list(map(self.calculate, suggestions))  # knock that lazy out
-        for candidate in suggestions:
-            if candidate.total > self.best:
-                for key in candidate.change:
+    def score_suggestions(
+        self, suggestions: List[Suggestion]
+    ) -> List[ScoredSuggestion]:
+        scored_suggestions = list(map(self.calculate, suggestions))
+        for scored_suggestion in scored_suggestions:
+            if scored_suggestion.total > self.best:
+                for key in scored_suggestion.change:
                     self.the_good.add(key)
             else:
-                for key in candidate.change:
+                for key in scored_suggestion.change:
                     self.the_bad.add(key)
-        return suggestions
+        return scored_suggestions
 
     def solve(self) -> None:
         while True:
@@ -219,10 +217,10 @@ class Solver(ABC):
             else:
                 self.the_ugly = set()
 
-            candidates = self.score_suggestions(self.find_suggestions())
+            scored_suggestions = self.score_suggestions(self.find_suggestions())
 
             # safety check if too much ignoring has happened
-            if len(candidates) == 0:
+            if len(scored_suggestions) == 0:
                 if self.do_sets:
                     self.do_sets = False
                     continue
@@ -230,15 +228,17 @@ class Solver(ABC):
                     break
 
             # do rounds of improvements
-            candidates += self.score_suggestions(
-                self.improve_scored_suggestions(scored_suggestions=candidates)
+            scored_suggestions += self.score_suggestions(
+                self.improve_scored_suggestions(scored_suggestions=scored_suggestions)
             )
-            candidates += self.score_suggestions(
-                self.another_improve_scored_suggestions(scored_suggestions=candidates)
+            scored_suggestions += self.score_suggestions(
+                self.another_improve_scored_suggestions(
+                    scored_suggestions=scored_suggestions
+                )
             )
 
             # find the best suggestion (replace with max statement when code can be tested)
-            best_candidate = max(candidates, key=lambda x: x.total)
+            best_candidate = max(scored_suggestions, key=lambda x: x.total)
 
             if best_candidate.total > self.best:
                 self.best = best_candidate.total

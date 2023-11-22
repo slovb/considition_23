@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, Generator, List
 from data_keys import (
     LocationKeys as LK,
     GeneralKeys as GK,
@@ -8,25 +8,25 @@ from scoring import calculateScore
 from original_scoring import calculateScore as originalCalculateScore
 from settings import Settings
 from solver import Solver
-from suggestion import Suggestion, STag
+from suggestion import ScoredSuggestion, Suggestion, STag
 
 
 class RegularSolver(Solver):
     def __init__(self, mapName, mapEntity, generalData):
         super().__init__(mapName=mapName, mapEntity=mapEntity, generalData=generalData)
 
-    def calculate(self, suggestion: Suggestion) -> Dict[str, Dict]:
-        suggestion.set_score(
-            calculateScore(
+    def calculate(self, suggestion: Suggestion) -> ScoredSuggestion:
+        return ScoredSuggestion(
+            suggestion=suggestion,
+            score=calculateScore(
                 self.mapName,
                 self.solution,
                 suggestion.change,
                 self.mapEntity,
                 self.generalData,
                 self.distance_cache,
-            )
+            ),
         )
-        return suggestion.score
 
     def calculate_verification(self) -> Dict[str, Dict]:
         return originalCalculateScore(
@@ -40,9 +40,9 @@ class RegularSolver(Solver):
         self.rebuild_cache()
         if Settings.starting_point == "func":
             suggestion = Suggestion(change={}, tag=STag.start)
-            self.calculate(suggestion)
-            self.best = suggestion.total
-            self.best_id = suggestion.get_game_id()
+            scored_suggestion = self.calculate(suggestion)
+            self.best = scored_suggestion.total
+            self.best_id = scored_suggestion.get_game_id()
 
     def starting_point(self) -> Dict[str, Dict]:
         from helper import bundle
@@ -65,8 +65,7 @@ class RegularSolver(Solver):
         locations = self.mapEntity[LK.locations]
         self.rebuild_distance_cache(locations)
 
-    def generate_changes(self):
-        #  -> Generator[Suggestion]
+    def generate_changes(self) -> Generator[Suggestion, None, None]:
         locations = self.solution[LK.locations]
         for key in (key for key in locations if key not in self.the_ugly):
             location = locations[key]
@@ -89,18 +88,18 @@ class RegularSolver(Solver):
                 yield Suggestion(change={key: bundle(1, 0)}, tag=STag.change)
 
     def find_suggestions(self) -> List[Suggestion]:
-        changes = []
+        suggestions = []
         for change in self.generate_changes():
-            changes.append(change)
+            suggestions.append(change)
         if self.stale_progress:
             for change in self.generate_moves(self.mapEntity[LK.locations]):
-                changes.append(change)
+                suggestions.append(change)
             for change in self.generate_consolidation(self.mapEntity[LK.locations]):
-                changes.append(change)
-        return changes
+                suggestions.append(change)
+        return suggestions
 
     def improve_scored_suggestions(
-        self, scored_suggestions: List[Suggestion]
+        self, scored_suggestions: List[ScoredSuggestion]
     ) -> List[Suggestion]:
         new_suggestions = []
 
@@ -127,14 +126,10 @@ class RegularSolver(Solver):
                 if pick_count >= Settings.group_size:
                     break
             new_suggestions.append(Suggestion(change=group_change, tag=STag.group))
-            # candidates.append(group_change)
-            # group_score = self.calculate(group_change)
-            # scores.append(group_score)
-            # totals.append(get_total(group_score))
         return new_suggestions
 
     def another_improve_scored_suggestions(
-        self, scored_suggestions: List[Suggestion]
+        self, scored_suggestions: List[ScoredSuggestion]
     ) -> List[Suggestion]:
         return super().another_improve_scored_suggestions(scored_suggestions)
 
