@@ -1,4 +1,4 @@
-from typing import Dict, Generator, List
+from typing import Callable, Dict, Generator, Iterable, List
 from data_keys import (
     LocationKeys as LK,
     GeneralKeys as GK,
@@ -14,6 +14,11 @@ from suggestion import ScoredSuggestion, Suggestion, STag
 class RegularSolver(Solver):
     def __init__(self, mapName, mapEntity, generalData):
         super().__init__(mapName=mapName, mapEntity=mapEntity, generalData=generalData)
+
+    def list_actions(
+        self,
+    ) -> List[Callable[[List[ScoredSuggestion]], Iterable[Suggestion]]]:
+        return [self.find_suggestions, self.improve_scored_suggestions]
 
     def calculate(self, suggestion: Suggestion) -> ScoredSuggestion:
         return ScoredSuggestion(
@@ -87,7 +92,7 @@ class RegularSolver(Solver):
             if key not in locations:
                 yield Suggestion(change={key: bundle(1, 0)}, tag=STag.change)
 
-    def find_suggestions(self) -> List[Suggestion]:
+    def find_suggestions(self, _: List[ScoredSuggestion]) -> List[Suggestion]:
         suggestions = []
         for change in self.generate_changes():
             suggestions.append(change)
@@ -102,6 +107,8 @@ class RegularSolver(Solver):
         self, scored_suggestions: List[ScoredSuggestion]
     ) -> List[Suggestion]:
         new_suggestions = []
+        if len(scored_suggestions) == 0:
+            return []
 
         # apply the group_size highest improvements that don't interact
         if Settings.do_groups:
@@ -127,11 +134,6 @@ class RegularSolver(Solver):
                     break
             new_suggestions.append(Suggestion(change=group_change, tag=STag.group))
         return new_suggestions
-
-    def another_improve_scored_suggestions(
-        self, scored_suggestions: List[ScoredSuggestion]
-    ) -> List[Suggestion]:
-        return super().another_improve_scored_suggestions(scored_suggestions)
 
     def post_improvement(self, change):
         return super().post_improvement(change)

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import json
-from typing import Dict, Generator, List, Set
+from typing import Callable, Dict, Generator, Iterable, List, Set
 
 from data_keys import (
     CoordinateKeys as CK,
@@ -39,19 +39,9 @@ class Solver(ABC):
         super().__init__()
 
     @abstractmethod
-    def find_suggestions(self) -> List[Suggestion]:
-        return []
-
-    @abstractmethod
-    def improve_scored_suggestions(
-        self, scored_suggestions: List[ScoredSuggestion]
-    ) -> List[Suggestion]:
-        return []
-
-    @abstractmethod
-    def another_improve_scored_suggestions(
-        self, scored_suggestions: List[ScoredSuggestion]
-    ) -> List[Suggestion]:
+    def list_actions(
+        self,
+    ) -> List[Callable[[List[ScoredSuggestion]], Iterable[Suggestion]]]:
         return []
 
     @abstractmethod
@@ -62,6 +52,7 @@ class Solver(ABC):
     def calculate(self, suggestion: Suggestion) -> ScoredSuggestion:
         pass
 
+    @abstractmethod
     def initialize(self) -> None:
         self.location_type = {}
         for key in [
@@ -196,7 +187,7 @@ class Solver(ABC):
                         yield Suggestion(change=change, tag=STag.change)
 
     def score_suggestions(
-        self, suggestions: List[Suggestion]
+        self, suggestions: Iterable[Suggestion]
     ) -> List[ScoredSuggestion]:
         scored_suggestions = list(map(self.calculate, suggestions))
         for scored_suggestion in scored_suggestions:
@@ -217,7 +208,10 @@ class Solver(ABC):
             else:
                 self.the_ugly = set()
 
-            scored_suggestions = self.score_suggestions(self.find_suggestions())
+            # find and score suggestions in action order
+            scored_suggestions: List[ScoredSuggestion] = []
+            for action in self.list_actions():
+                scored_suggestions += self.score_suggestions(action(scored_suggestions))
 
             # safety check if too much ignoring has happened
             if len(scored_suggestions) == 0:
@@ -226,16 +220,6 @@ class Solver(ABC):
                     continue
                 else:
                     break
-
-            # do rounds of improvements
-            scored_suggestions += self.score_suggestions(
-                self.improve_scored_suggestions(scored_suggestions=scored_suggestions)
-            )
-            scored_suggestions += self.score_suggestions(
-                self.another_improve_scored_suggestions(
-                    scored_suggestions=scored_suggestions
-                )
-            )
 
             # find the best suggestion (replace with max statement when code can be tested)
             best_candidate = max(scored_suggestions, key=lambda x: x.total)

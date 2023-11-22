@@ -1,4 +1,4 @@
-from typing import Dict, Generator, List
+from typing import Callable, Dict, Generator, Iterable, List
 from data_keys import (
     CoordinateKeys as CK,
     GeneralKeys as GK,
@@ -42,6 +42,16 @@ class SandboxSolver(Solver):
             ),
         )
 
+    def list_actions(
+        self,
+    ) -> List[Callable[[List[ScoredSuggestion]], Iterable[Suggestion]]]:
+        return [
+            self.find_new_locations,
+            self.wary_the_best,
+            self.sandbox_groups,
+            self.tweak_state,
+        ]
+
     def calculate_verification(self) -> Dict[str, Dict]:
         solution: Dict[str, Dict] = {LK.locations: {}}
         fields = [
@@ -81,11 +91,7 @@ class SandboxSolver(Solver):
         )
         self.rebuild_distance_cache(self.possible_locations)
 
-    def find_suggestions(self) -> List[Suggestion]:
-        return self.find_new_locations()
-
-    def find_new_locations(self) -> List[Suggestion]:
-        changes = []
+    def find_new_locations(self, _: List[ScoredSuggestion]) -> Iterable[Suggestion]:
         remaining_types = self.remaining_types_in_order()
         if len(remaining_types) == 0:
             return []
@@ -95,12 +101,9 @@ class SandboxSolver(Solver):
         print(self.limits)
 
         # try to add locations
-        for change in self.generate_additions():
-            changes.append(change)
+        return self.generate_additions()
 
-        return changes
-
-    def improve_scored_suggestions(
+    def wary_the_best(
         self, scored_suggestions: List[ScoredSuggestion]
     ) -> List[Suggestion]:
         suggestions = []
@@ -137,23 +140,26 @@ class SandboxSolver(Solver):
                     break
         return suggestions
 
-    def another_improve_scored_suggestions(
-        self, scored_suggestions: List[ScoredSuggestion]
-    ) -> List[Suggestion]:
-        suggestions = []
-
+    def tweak_state(
+        self, _: List[ScoredSuggestion]
+    ) -> Generator[Suggestion, None, None]:
         # tweaks to be separated later
         for suggestion in self.generate_changes():
-            suggestions.append(suggestion)
+            yield suggestion
         if self.stale_progress:
             for suggestion in self.generate_swaps():
-                suggestions.append(suggestion)
+                yield suggestion
             # for suggestion in self.generate_moves(self.solution[LK.locations])():
-            #     suggestions.append(suggestion)
+            #     yield suggestion
             # for suggestion in self.generate_consolidation(
             #     self.solution[LK.locations]
             # )():
-            #     suggestions.append(suggestion)
+            #     yield suggestion
+
+    def sandbox_groups(
+        self, scored_suggestions: List[ScoredSuggestion]
+    ) -> List[Suggestion]:
+        suggestions = []
 
         if (
             Settings.do_sandbox_groups
@@ -165,6 +171,8 @@ class SandboxSolver(Solver):
             for scored_suggestion in sorted(
                 scored_suggestions, key=lambda x: x.total, reverse=True
             ):
+                if scored_suggestion.tag != STag.add:
+                    continue
                 # looping through the indexes of the highest totals
                 if any([key in picked for key in scored_suggestion.change]):
                     continue
