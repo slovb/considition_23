@@ -143,7 +143,7 @@ def jiggle(mapName: str) -> None:
             # print("_", end="", flush=True)
             total, new_id = best(mapName)
             if id != new_id:
-                print(new_total)
+                print(total)
                 id = new_id
             solution = get_solution(load_game(id))
 

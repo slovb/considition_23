@@ -17,13 +17,13 @@ class Settings:
     group_size = 16
     groups_distance_limit = 100.0
 
-    sandbox_explore_how_many = 16
+    sandbox_explore_how_many = 4
     do_sandbox_groups = True
     sandbox_group_size = 2
-    sandbox_groups_distance_limit = 10.0
+    sandbox_groups_distance_limit = 100.0
     do_sandbox_sets = True
-    sandbox_too_near = 10.0
-    granularity = 1e5
+    sandbox_too_near = 20.0
+    granularity = 1e3
 
 
 @dataclass
