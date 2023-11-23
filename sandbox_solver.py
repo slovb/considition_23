@@ -5,7 +5,7 @@ from data_keys import (
     LocationKeys as LK,
     MapKeys as MK,
 )
-from helper import apply_change, bundle
+from helper import apply_change, build_distance_cache, bundle
 from map_limiter import MapLimiter
 from sandbox_helper import build_hotspot_cache, find_possible_locations, temporary_names
 from scoring import calculateScore
@@ -91,7 +91,9 @@ class SandboxSolver(Solver):
         self.possible_locations = find_possible_locations(
             hotspot_cache=self.hotspot_cache, map_limiter=self.map_limiter
         )
-        self.rebuild_distance_cache(self.possible_locations)
+        self.distance_cache = build_distance_cache(
+            self.possible_locations, self.generalData
+        )
 
     def find_new_locations(self, _: List[ScoredSuggestion]) -> Iterable[Suggestion]:
         remaining_types = self.remaining_types_in_order()

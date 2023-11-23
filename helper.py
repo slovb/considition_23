@@ -1,10 +1,16 @@
 from typing import Any, Dict, Optional
 from data_keys import (
     CoordinateKeys as CK,
+    GeneralKeys as GK,
     LocationKeys as LK,
 )
+from scoring import distanceBetweenPoint
 
 from settings import Settings
+
+
+def abs_angle_change(la1: float, lo1: float, la2: float, lo2: float) -> float:
+    return abs(la2 - la1) + abs(lo2 - lo1)
 
 
 def apply_change(
@@ -60,3 +66,31 @@ def bundle(
     if latitude is not None:
         out[CK.latitude] = latitude
     return out
+
+
+def build_distance_cache(
+    locations: Dict[str, Dict], generalData: Dict
+) -> Dict[str, Dict]:
+    keys = []
+    lats = []
+    longs = []
+    willingnessToTravelInMeters = generalData[GK.willingnessToTravelInMeters]
+    way_too_far = 1.0
+    distance_cache: Dict[str, Dict] = {}
+    for key, location in locations.items():
+        keys.append(key)
+        distance_cache[key] = {}
+        lats.append(location[CK.latitude])
+        longs.append(location[CK.longitude])
+    for i in range(len(lats) - 1):
+        for j in range(i + 1, len(lats)):
+            abc = abs_angle_change(lats[i], longs[i], lats[j], longs[j])
+            if abc > way_too_far:  # very rough distance limit
+                continue
+            distance = distanceBetweenPoint(lats[i], longs[i], lats[j], longs[j])
+            if distance < willingnessToTravelInMeters:
+                distance_cache[keys[i]][keys[j]] = distance
+                distance_cache[keys[j]][keys[i]] = distance
+            else:
+                way_too_far = min(way_too_far, 10.0 * abc)
+    return distance_cache

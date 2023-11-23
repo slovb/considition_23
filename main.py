@@ -3,9 +3,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from api import getGeneralData, getMapData
-from data_keys import (
-    MapNames as MN,
-)
+from data_keys import MapNames as MN
 
 
 from regular_solver import RegularSolver

@@ -4,13 +4,13 @@ from typing import Tuple
 from settings import Settings
 
 
-def best(mapName: str) -> Tuple[int, str]:
+def best(mapName: str) -> Tuple[float, str]:
     path = f"{Settings.log_folder}/{mapName}.txt"
     with open(path, "r", encoding="utf8") as f:
         scores = []
         for line in f.readlines():
             parts = line.rstrip().split(" ")
-            score = int(parts[0])
+            score = float(parts[0])
             id = parts[1]
             scores.append((score, id))
     return max(scores)

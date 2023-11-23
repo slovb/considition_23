@@ -12,7 +12,7 @@ from data_keys import (
 )
 
 
-def calculateScore(mapName, solution, mapEntity, generalData):
+def calculateScore(mapName, solution, mapEntity, generalData, round_total=False):
     scoredSolution = {
         SK.gameId: str(uuid.uuid4()),
         SK.mapName: mapName,
@@ -149,15 +149,22 @@ def calculateScore(mapName, solution, mapEntity, generalData):
         scoredSolution[SK.totalRevenue] - scoredSolution[SK.totalLeasingCost]
     ) / 1000
 
-    scoredSolution[SK.gameScore][SK.total] = round(
-        (
+    if round_total:
+        scoredSolution[SK.gameScore][SK.total] = round(
+            (
+                scoredSolution[SK.gameScore][SK.co2Savings]
+                * generalData[GK.co2PricePerKiloInSek]
+                + scoredSolution[SK.gameScore][SK.earnings]
+            )
+            * (1 + scoredSolution[SK.gameScore][SK.totalFootfall]),
+            2,
+        )
+    else:
+        scoredSolution[SK.gameScore][SK.total] = (
             scoredSolution[SK.gameScore][SK.co2Savings]
             * generalData[GK.co2PricePerKiloInSek]
             + scoredSolution[SK.gameScore][SK.earnings]
-        )
-        * (1 + scoredSolution[SK.gameScore][SK.totalFootfall]),
-        2,
-    )
+        ) * (1 + scoredSolution[SK.gameScore][SK.totalFootfall])
 
     return scoredSolution
 

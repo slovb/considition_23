@@ -11,6 +11,8 @@ class MapLimiter:
         self.latitudeMax = latitudeMax
         self.longitudeMin = longitudeMin
         self.longitudeMax = longitudeMax
+        self.latitudeDiff = latitudeMax - latitudeMin
+        self.longitudeDiff = longitudeMax - longitudeMin
 
     def latitude(self, latitude: float) -> float:
         return min(self.latitudeMax, max(self.latitudeMin, latitude))

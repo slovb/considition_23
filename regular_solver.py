@@ -3,7 +3,7 @@ from data_keys import (
     LocationKeys as LK,
     GeneralKeys as GK,
 )
-from helper import apply_change, bundle
+from helper import apply_change, build_distance_cache, bundle
 from scoring import calculateScore
 from original_scoring import calculateScore as originalCalculateScore
 from settings import Settings
@@ -71,7 +71,7 @@ class RegularSolver(Solver):
 
     def rebuild_cache(self) -> None:
         locations = self.mapEntity[LK.locations]
-        self.rebuild_distance_cache(locations)
+        self.distance_cache = build_distance_cache(locations, self.generalData)
 
     def generate_changes(self) -> Generator[Suggestion, None, None]:
         locations = self.solution[LK.locations]
@@ -87,6 +87,8 @@ class RegularSolver(Solver):
                 yield Suggestion(change={key: bundle(-2, 1)}, tag=STag.change)
             if f9Count > 0 and f3Count < Settings.max_stations:  # f9100 -> f3100
                 yield Suggestion(change={key: bundle(1, -1)}, tag=STag.change)
+            if f9Count > 0 and f3Count <= Settings.max_stations - 2:  # f9100 -> 2 f3100
+                yield Suggestion(change={key: bundle(2, -1)}, tag=STag.change)
             if f3Count < Settings.max_stations:  # increase f3100
                 yield Suggestion(change={key: bundle(1, 0)}, tag=STag.change)
         for key in (

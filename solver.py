@@ -9,14 +9,9 @@ from data_keys import (
     GeneralKeys as GK,
 )
 from helper import apply_change, bundle
-from scoring import distanceBetweenPoint
 from settings import Settings
 from store import store
 from suggestion import ScoredSuggestion, Suggestion, STag
-
-
-def abs_angle_change(la1: float, lo1: float, la2: float, lo2: float) -> float:
-    return abs(la2 - la1) + abs(lo2 - lo1)
 
 
 class Solver(ABC):
@@ -63,29 +58,6 @@ class Solver(ABC):
             GK.convenience,
         ]:
             self.location_type[key] = self.generalData[GK.locationTypes][key][GK.type_]
-
-    def rebuild_distance_cache(self, locations: Dict[str, Dict]) -> None:
-        keys = []
-        lats = []
-        longs = []
-        willingnessToTravelInMeters = self.generalData[GK.willingnessToTravelInMeters]
-        way_too_far = 1.0
-        for key, location in locations.items():
-            keys.append(key)
-            self.distance_cache[key] = {}
-            lats.append(location[CK.latitude])
-            longs.append(location[CK.longitude])
-        for i in range(len(lats) - 1):
-            for j in range(i + 1, len(lats)):
-                abc = abs_angle_change(lats[i], longs[i], lats[j], longs[j])
-                if abc > way_too_far:  # very rough distance limit
-                    continue
-                distance = distanceBetweenPoint(lats[i], longs[i], lats[j], longs[j])
-                if distance < willingnessToTravelInMeters:
-                    self.distance_cache[keys[i]][keys[j]] = distance
-                    self.distance_cache[keys[j]][keys[i]] = distance
-                else:
-                    way_too_far = min(way_too_far, 10.0 * abc)
 
     def generate_moves(
         self, locations: Dict[str, Dict]

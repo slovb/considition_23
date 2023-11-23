@@ -10,8 +10,9 @@ from data_keys import (
 )
 from dotenv import load_dotenv
 from api import getGeneralData, getMapData
+from helper import build_distance_cache
 from map_limiter import MapLimiter
-from original_scoring import calculateScore
+from scoring import calculateScore
 
 from settings import Settings
 from best import best
@@ -30,14 +31,29 @@ def jiggle_sandbox(
     mapEntity: Dict,
     generalData: Dict,
     mapLimiter: MapLimiter,
+    sandbox_names: Dict[str, str],
+    hotspot_footfall_cache: Dict,
 ) -> Dict:
     max_step_factor = 0.001
     step_lat = mapLimiter.latitudeDiff * max_step_factor * 2 * (random.random() - 0.5)
     step_long = mapLimiter.longitudeDiff * max_step_factor * 2 * (random.random() - 0.5)
-    location = random.choice(list(solution[LK.locations].values()))
+    key = random.choice(list(solution[LK.locations].keys()))
+    location = solution[LK.locations][key]
     location[CK.latitude] = mapLimiter.latitude(location[CK.latitude] + step_lat)
     location[CK.longitude] = mapLimiter.longitude(location[CK.longitude] + step_long)
-    return calculateScore(mapName, solution, mapEntity, generalData, round_total=True)
+    distance_cache = build_distance_cache(solution[LK.locations], generalData)
+    return calculateScore(
+        mapName,
+        solution,
+        {},
+        mapEntity,
+        generalData,
+        distance_cache,
+        sandbox_names=sandbox_names,
+        inverse_sandbox_names=sandbox_names,
+        hotspot_footfall_cache=hotspot_footfall_cache,
+        round_total=False,
+    )
 
 
 def increase(location):
@@ -57,7 +73,11 @@ def decrease(location):
 
 
 def jiggle_regular(
-    mapName: str, solution: Dict, mapEntity: Dict, generalData: Dict
+    mapName: str,
+    solution: Dict,
+    mapEntity: Dict,
+    generalData: Dict,
+    distance_cache: Dict[str, Dict],
 ) -> Dict:
     key = random.choice(list(solution[LK.locations].keys()))
     location = solution[LK.locations][key]
@@ -67,7 +87,9 @@ def jiggle_regular(
         decrease(location)
         if location[LK.f3100Count] == location[LK.f9100Count] == 0:
             del solution[LK.locations][key]
-    return calculateScore(mapName, solution, mapEntity, generalData, round_total=True)
+    return calculateScore(
+        mapName, solution, {}, mapEntity, generalData, distance_cache, round_total=False
+    )
 
 
 def jiggle(mapName: str) -> None:
@@ -85,30 +107,43 @@ def jiggle(mapName: str) -> None:
 
     total, id = best(mapName)
     print(f"{total}\t\t{id}")
+    game = load_game(id)
+    solution = get_solution(game)
+
+    if mapName in [MN.gSandbox, MN.sSandbox]:
+        sandbox_names = {key: key for key in solution[LK.locations].keys()}
+        hotspot_footfall_cache: Dict = {}
+    else:
+        distance_cache = build_distance_cache(mapEntity[LK.locations], generalData)
 
     while True:
-        total, id = best(mapName)
-        game = load_game(id)
-        solution = get_solution(game)
+        if mapName in [MN.gSandbox, MN.sSandbox]:
+            score = jiggle_sandbox(
+                mapName,
+                solution,
+                mapEntity,
+                generalData,
+                mapLimiter,
+                sandbox_names,
+                hotspot_footfall_cache,
+            )
+        else:
+            score = jiggle_regular(
+                mapName, solution, mapEntity, generalData, distance_cache
+            )
 
-        while True:
-            if mapName in [MN.gSandbox, MN.sSandbox]:
-                score = jiggle_sandbox(
-                    mapName, solution, mapEntity, generalData, mapLimiter
-                )
-            else:
-                score = jiggle_regular(mapName, solution, mapEntity, generalData)
-
-            new_total = get_total(score)
-            if new_total > total:
-                print("")
-                store(mapName, score)
-                total = new_total
-            elif abs(new_total - total) < 16.0:
-                print("+", end="", flush=True)
-            else:
-                print("_", end="", flush=True)
-                break
+        new_total = get_total(score)
+        if new_total > total:
+            print("")
+            store(mapName, score)
+            total = new_total
+        elif abs(new_total - total) < 16.0:
+            print("+", end="", flush=True)
+        else:
+            print("_", end="", flush=True)
+            total, id = best(mapName)
+            game = load_game(id)
+            solution = get_solution(game)
 
 
 if __name__ == "__main__":
