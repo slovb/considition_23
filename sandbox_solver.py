@@ -4,6 +4,7 @@ from data_keys import (
     GeneralKeys as GK,
     LocationKeys as LK,
     MapKeys as MK,
+    ScoringKeys as SK,
 )
 from helper import apply_change, build_distance_cache, bundle
 from map_limiter import MapLimiter
@@ -221,8 +222,8 @@ class SandboxSolver(Solver):
         # verification = self.calculate_verification()
         # ver_total = verification[SK.gameScore][SK.total]
         # print(f"verification total {ver_total}")
-        # if ver_total != round(total, 2):
-        #     raise SystemExit(f"!!!!!! {round(total, 2)}")
+        # if ver_total != suggestion.total:
+        #     raise SystemExit(f"!!!!!! {suggestion.total}")
 
         self.update_limits()
         for key in suggestion.change:

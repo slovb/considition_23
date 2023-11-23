@@ -5,9 +5,8 @@ from data_keys import (
     HotspotKeys as HK,
     LocationKeys as LK,
 )
-from helper import abs_angle_change, bundle
+from helper import abs_angle_change, bundle, distanceBetweenPoint
 from map_limiter import MapLimiter
-from scoring import distanceBetweenPoint
 from settings import Settings, KW
 
 
@@ -16,7 +15,7 @@ def build_hotspot_cache(mapEntity: Dict, generalData: Dict) -> Dict:
     hotspot_cache = {}
     keys = []
     way_too_far = 10.0
-    guts_multiplier = 5.0
+    guts_multiplier = 10.0
     willingnessToTravelInMeters = generalData[GK.willingnessToTravelInMeters]
     for key, hotspot in enumerate(hotspots):
         keys.append(key)
@@ -36,7 +35,7 @@ def build_hotspot_cache(mapEntity: Dict, generalData: Dict) -> Dict:
             distance = distanceBetweenPoint(i_lat, i_long, j_lat, j_long)
             # if distance < i_spread + j_spread + willingnessToTravelInMeters:
             # if distance < max(i_spread, j_spread):
-            if distance < max(i_spread, j_spread, willingnessToTravelInMeters):
+            if distance < max(i_spread + j_spread, willingnessToTravelInMeters):
                 hotspot_cache[i_key][KW.nearby][j_key] = distance
                 hotspot_cache[j_key][KW.nearby][i_key] = distance
             else:
@@ -65,7 +64,7 @@ def find_possible_locations(
             return i + 1
         return i
 
-    w = lambda spread, footfall: footfall / spread
+    w = lambda spread, footfall: spread * footfall
 
     for hotspot in hotspot_cache.values():
         hotspot_la = hotspot[CK.latitude]

@@ -11,6 +11,7 @@ from data_keys import (
     MapNames as MN,
     MapKeys as MK,
 )
+from helper import abs_angle_change, distanceBetweenPoint
 
 from settings import Settings
 
@@ -213,24 +214,6 @@ def calculateScore(
     return scoredSolution
 
 
-def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> float:
-    R = 6371e3
-    φ1 = lat_1 * math.pi / 180  #  φ, λ in radians
-    φ2 = lat_2 * math.pi / 180
-    Δφ = (lat_2 - lat_1) * math.pi / 180
-    Δλ = (long_2 - long_1) * math.pi / 180
-
-    a = np.sin(Δφ / 2) * np.sin(Δφ / 2) + np.cos(φ1) * np.cos(φ2) * np.sin(
-        Δλ / 2
-    ) * np.sin(Δλ / 2)
-
-    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-
-    d = R * c
-
-    return round(d, 0)
-
-
 def distributeSales(with_, without, generalData, distance_cache):
     for key_without in without:
         nearby = distance_cache.get(key_without)
@@ -266,12 +249,22 @@ def calculateFootfall(
     locations, mapEntity, inverse_sandbox_names, hotspot_footfall_cache
 ):
     maxFootfall = 0
+    way_too_far = 10.0
+    guts_multiplier = 10.0
     for keyLoc in locations:
         loc = locations[keyLoc]
         isn_key = inverse_sandbox_names[keyLoc]
         if isn_key not in hotspot_footfall_cache:
             increase = 0
             for hotspot in mapEntity[HK.hotspots]:
+                abc = abs_angle_change(
+                    hotspot[CK.latitude],
+                    hotspot[CK.longitude],
+                    loc[CK.latitude],
+                    loc[CK.longitude],
+                )
+                if abc > way_too_far:
+                    continue
                 distanceInMeters = distanceBetweenPoint(
                     hotspot[CK.latitude],
                     hotspot[CK.longitude],
@@ -283,6 +276,8 @@ def calculateFootfall(
                 if distanceInMeters <= maxSpread:
                     val = hotspot[LK.footfall] * (1 - (distanceInMeters / maxSpread))
                     increase += val / 10
+                else:
+                    way_too_far = min(way_too_far, guts_multiplier * abc)
             hotspot_footfall_cache[isn_key] = increase
         loc[LK.footfall] += hotspot_footfall_cache[isn_key]
         if maxFootfall < loc[LK.footfall]:

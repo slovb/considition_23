@@ -135,15 +135,26 @@ def calculateScore(mapName, solution, mapEntity, generalData, round_total=False)
             scoredSolution[LK.locations][key][LK.footfall] / 1000
         )
 
-    scoredSolution[SK.totalRevenue] = round(scoredSolution[SK.totalRevenue], 2)
+    if round_total:
+        scoredSolution[SK.totalRevenue] = round(scoredSolution[SK.totalRevenue], 2)
 
-    scoredSolution[SK.gameScore][SK.co2Savings] = round(
-        scoredSolution[SK.gameScore][SK.co2Savings], 2
-    )
+        scoredSolution[SK.gameScore][SK.co2Savings] = round(
+            scoredSolution[SK.gameScore][SK.co2Savings], 2
+        )
 
-    scoredSolution[SK.gameScore][SK.totalFootfall] = round(
-        scoredSolution[SK.gameScore][SK.totalFootfall], 4
-    )
+        scoredSolution[SK.gameScore][SK.totalFootfall] = round(
+            scoredSolution[SK.gameScore][SK.totalFootfall], 4
+        )
+    else:
+        scoredSolution[SK.totalRevenue] = scoredSolution[SK.totalRevenue]
+
+        scoredSolution[SK.gameScore][SK.co2Savings] = scoredSolution[SK.gameScore][
+            SK.co2Savings
+        ]
+
+        scoredSolution[SK.gameScore][SK.totalFootfall] = scoredSolution[SK.gameScore][
+            SK.totalFootfall
+        ]
 
     scoredSolution[SK.gameScore][SK.earnings] = (
         scoredSolution[SK.totalRevenue] - scoredSolution[SK.totalLeasingCost]

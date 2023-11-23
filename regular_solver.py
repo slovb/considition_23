@@ -3,7 +3,7 @@ from data_keys import (
     LocationKeys as LK,
     GeneralKeys as GK,
 )
-from helper import apply_change, build_distance_cache, bundle
+from helper import build_distance_cache, bundle
 from scoring import calculateScore
 from original_scoring import calculateScore as originalCalculateScore
 from settings import Settings

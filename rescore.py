@@ -25,7 +25,9 @@ def verify(id: str) -> None:
     ##Get non map specific data from Considition endpoint
     generalData = getGeneralData(Settings.cache_folder)
     solution = get_solution(game)
-    scoredSolution = calculateScore(mapName, solution, mapEntity, generalData)
+    scoredSolution = calculateScore(
+        mapName, solution, mapEntity, generalData, round_total=True
+    )
     if scoredSolution:
         print(json.dumps(scoredSolution, indent=4))
         print("-" * 80)

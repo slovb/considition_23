@@ -1,16 +1,36 @@
+import math
 from typing import Any, Dict, Optional
+
+import numpy as np
 from data_keys import (
     CoordinateKeys as CK,
     GeneralKeys as GK,
     LocationKeys as LK,
 )
-from scoring import distanceBetweenPoint
 
 from settings import Settings
 
 
 def abs_angle_change(la1: float, lo1: float, la2: float, lo2: float) -> float:
     return abs(la2 - la1) + abs(lo2 - lo1)
+
+
+def distanceBetweenPoint(lat_1, long_1, lat_2, long_2) -> float:
+    R = 6371e3
+    φ1 = lat_1 * math.pi / 180  #  φ, λ in radians
+    φ2 = lat_2 * math.pi / 180
+    Δφ = (lat_2 - lat_1) * math.pi / 180
+    Δλ = (long_2 - long_1) * math.pi / 180
+
+    a = np.sin(Δφ / 2) * np.sin(Δφ / 2) + np.cos(φ1) * np.cos(φ2) * np.sin(
+        Δλ / 2
+    ) * np.sin(Δλ / 2)
+
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+
+    d = R * c
+
+    return round(d, 0)
 
 
 def apply_change(
