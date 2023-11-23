@@ -145,9 +145,9 @@ class Solver(ABC):
                 for key in suggestion.change:
                     picked.add(key)
                     pick_count += 1
-                    for nkey, distance in self.distance_cache[key].items():
-                        if distance < Settings.groups_distance_limit:
-                            picked.add(nkey)  # don't need nearby
+                    # for nkey, distance in self.distance_cache[key].items():
+                    #     if distance < Settings.groups_distance_limit:
+                    #         picked.add(nkey)  # don't need nearby
                 apply_change(group_change, suggestion.change, capped=False)
                 if pick_count >= Settings.group_size:
                     break
@@ -164,7 +164,7 @@ class Solver(ABC):
         adds = [
             bundle(1, 0),
             bundle(2, 0),
-            bundle(0, 1),
+            # bundle(0, 1),
         ]
         rems = [
             bundle(-1, 0),
@@ -193,8 +193,8 @@ class Solver(ABC):
         adds = [
             bundle(1, 0),
             bundle(2, 0),
-            bundle(1, 1),
-            bundle(2, 2),
+            # bundle(1, 1),
+            # bundle(2, 2),
         ]
         rems = [
             bundle(-1, 0),

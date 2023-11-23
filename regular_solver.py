@@ -88,7 +88,7 @@ class RegularSolver(Solver):
                 yield Suggestion(change={key: bundle(-2, 1)}, tag=STag.change)
             if f9Count > 0 and f3Count < Settings.max_stations:  # f9100 -> f3100
                 yield Suggestion(change={key: bundle(1, -1)}, tag=STag.change)
-            if f9Count > 0 and f3Count <= Settings.max_stations - 2:  # f9100 -> 2 f3100
+            if f9Count > 0 and f3Count == 0:  # f9100 -> 2 f3100
                 yield Suggestion(change={key: bundle(2, -1)}, tag=STag.change)
             if f3Count < Settings.max_stations:  # increase f3100
                 yield Suggestion(change={key: bundle(1, 0)}, tag=STag.change)

@@ -11,11 +11,11 @@ class Settings:
     starting_point = "func"
     max_stations = 2
 
-    partial_additions = False
+    partial_additions = True
     do_sets = True
     do_groups = True
     group_size = 16
-    groups_distance_limit = 100.0
+    # groups_distance_limit = 10.0
 
     sandbox_explore_how_many = 16
     do_sandbox_groups = False

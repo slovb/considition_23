@@ -1,3 +1,4 @@
+import itertools
 from typing import Dict, Tuple
 from data_keys import (
     CoordinateKeys as CK,
@@ -106,6 +107,54 @@ def find_possible_locations(
 
     print(f"{len(locations)} candidates")
     return locations
+
+
+# def find_possible_locations(
+#     hotspot_cache: Dict, map_limiter: MapLimiter
+# ) -> Dict[str, Dict]:
+#     locations = {}
+#     i = 1
+#     taken = set()
+#     tkey = lambda x: int(x * Settings.granularity)
+
+#     def adder(i: int, latitude: float, longitude: float, name: str) -> int:
+#         la = map_limiter.latitude(latitude)
+#         lo = map_limiter.longitude(longitude)
+#         kk = (tkey(la), tkey(lo))
+#         if kk not in taken:
+#             locations[f"c_{name}_{i}"] = bundle(
+#                 latitude=la,
+#                 longitude=lo,
+#             )
+#             taken.add(kk)
+#             return i + 1
+#         return i
+
+#     w = lambda spread, footfall: spread * footfall
+
+#     for hotspot in hotspot_cache.values():
+#         hotspot_la = hotspot[CK.latitude]
+#         hotspot_lo = hotspot[CK.longitude]
+#         hotspot_w = w(hotspot[HK.spread], hotspot[LK.footfall])
+
+#         # add the hotspot as a location
+#         i = adder(i, hotspot_la, hotspot_lo, "hotspot")
+
+#         nearby: Dict[str, Dict] = hotspot[KW.nearby]
+#         for keys in itertools.combinations(nearby.keys(), 2):
+#             tri_la = hotspot_la * hotspot_w
+#             tri_lo = hotspot_lo * hotspot_w
+#             tri_w = hotspot_w
+#             for key in keys:
+#                 neighbor = hotspot_cache[key]
+#                 neighbor_w = w(neighbor[HK.spread], neighbor[LK.footfall])
+#                 tri_la += neighbor[CK.latitude] * neighbor_w
+#                 tri_lo += neighbor[CK.longitude] * neighbor_w
+#                 tri_w += neighbor_w
+#             i = adder(i, tri_la / tri_w, tri_lo / tri_w, "triangle")
+
+#     print(f"{len(locations)} candidates")
+#     return locations
 
 
 def temporary_names(
