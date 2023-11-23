@@ -73,8 +73,9 @@ class RegularSolver(Solver):
         locations = self.mapEntity[LK.locations]
         self.distance_cache = build_distance_cache(locations, self.generalData)
 
-    def generate_changes(self) -> Generator[Suggestion, None, None]:
-        locations = self.solution[LK.locations]
+    def generate_changes(
+        self, locations: Dict[str, Dict]
+    ) -> Generator[Suggestion, None, None]:
         for key in (key for key in locations if key not in self.the_ugly):
             location = locations[key]
             f3Count = location[LK.f3100Count]
@@ -99,7 +100,7 @@ class RegularSolver(Solver):
 
     def find_suggestions(self, _: List[ScoredSuggestion]) -> List[Suggestion]:
         suggestions = []
-        for change in self.generate_changes():
+        for change in self.generate_changes(self.solution[LK.locations]):
             suggestions.append(change)
         if self.stale_progress:
             for change in self.generate_moves(self.mapEntity[LK.locations]):

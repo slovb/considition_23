@@ -15,7 +15,7 @@ class Settings:
     do_sets = True
     do_groups = True
     group_size = 16
-    groups_distance_limit = 10.0
+    groups_distance_limit = 100.0
 
     sandbox_explore_how_many = 16
     do_sandbox_groups = True

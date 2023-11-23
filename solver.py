@@ -1,4 +1,5 @@
 import copy
+import itertools
 from multiprocessing import Pool
 from abc import ABC, abstractmethod
 import json
@@ -160,6 +161,15 @@ class Solver(ABC):
     def generate_moves(
         self, locations: Dict[str, Dict]
     ) -> Generator[Suggestion, None, None]:
+        adds = [
+            bundle(1, 0),
+            bundle(2, 0),
+            bundle(0, 1),
+        ]
+        rems = [
+            bundle(-1, 0),
+            bundle(0, -1),
+        ]
         for main_key in locations:
             main_location = self.solution[LK.locations].get(main_key)
             if (
@@ -174,40 +184,22 @@ class Solver(ABC):
                 if key in self.solution[LK.locations]
             ]
             for sub_key in nearby:
-                sub_loc = self.solution[LK.locations][sub_key]
-                changes = []
-                if (
-                    main_location is None
-                    or main_location[LK.f3100Count] < Settings.max_stations
-                ):
-                    changes.append({main_key: bundle(1, 0)})
-                if (
-                    main_location is None
-                    or main_location[LK.f9100Count] < Settings.max_stations
-                ):
-                    changes.append({main_key: bundle(0, 1)})
-                if (
-                    main_location is not None
-                    and main_location[LK.f3100Count] > 0
-                    and main_location[LK.f9100Count] < Settings.max_stations
-                ):
-                    changes.append({main_key: bundle(-1, 1)})
-                for change in changes:
-                    if (
-                        main_location is None
-                        or main_location[LK.f3100Count] < Settings.max_stations
-                    ):
-                        change[main_key] = bundle(1, 0)
-                    elif main_location[LK.f3100Count] == Settings.max_stations:
-                        change[main_key] = bundle(-1, 1)
-
-                    if sub_loc[LK.f3100Count] == 0:
-                        change[sub_key] = bundle(1, -1)
-                    else:
-                        change[sub_key] = bundle(-1, 0)
-                    yield Suggestion(change=change, tag=STag.change)
+                for add in adds:
+                    for rem in rems:
+                        change = {main_key: add, sub_key: rem}
+                        yield Suggestion(change=change, tag=STag.change)
 
     def generate_consolidation(self, locations) -> Generator[Suggestion, None, None]:
+        adds = [
+            bundle(1, 0),
+            bundle(2, 0),
+            bundle(1, 1),
+            bundle(2, 2),
+        ]
+        rems = [
+            bundle(-1, 0),
+            bundle(0, -1),
+        ]
         for main_key in locations:
             main_location = self.solution[LK.locations].get(main_key)
             if (
@@ -223,35 +215,11 @@ class Solver(ABC):
             ]
             if len(nearby) < 2:
                 continue
-            for i, sub_1_key in enumerate(nearby[:-1]):
-                sub_1_loc = self.solution[LK.locations][sub_1_key]
-                for sub_2_key in nearby[i + 1 :]:
-                    sub_2_loc = self.solution[LK.locations][sub_2_key]
-                    changes = []
-                    if (
-                        main_location is None
-                        or main_location[LK.f3100Count] < Settings.max_stations
-                    ):
-                        changes.append({main_key: bundle(1, 0)})
-                    if (
-                        main_location is None
-                        or main_location[LK.f9100Count] < Settings.max_stations
-                    ):
-                        changes.append({main_key: bundle(0, 1)})
-                    if (
-                        main_location is not None
-                        and main_location[LK.f3100Count] > 0
-                        and main_location[LK.f9100Count] < Settings.max_stations
-                    ):
-                        changes.append({main_key: bundle(-1, 1)})
-                    for change in changes:
-                        if sub_1_loc[LK.f3100Count] == 0:
-                            change[sub_1_key] = bundle(1, -1)
-                        else:
-                            change[sub_1_key] = bundle(-1, 0)
-
-                        if sub_2_loc[LK.f3100Count] == 0:
-                            change[sub_2_key] = bundle(1, -1)
-                        else:
-                            change[sub_2_key] = bundle(-1, 0)
-                        yield Suggestion(change=change, tag=STag.change)
+            for i in range(2, len(nearby) + 1):
+                for keys in itertools.combinations(nearby, i):
+                    for add in adds:
+                        for rem in rems:
+                            change = {main_key: add}
+                            for key in keys:
+                                change[key] = rem
+                            yield Suggestion(change=change, tag=STag.change)
