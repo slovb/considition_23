@@ -1,3 +1,4 @@
+import copy
 from multiprocessing import Pool
 from abc import ABC, abstractmethod
 import json
@@ -58,6 +59,103 @@ class Solver(ABC):
             GK.convenience,
         ]:
             self.location_type[key] = self.generalData[GK.locationTypes][key][GK.type_]
+
+    def score_suggestions(
+        self, suggestions: Iterable[Suggestion]
+    ) -> List[ScoredSuggestion]:
+        if Settings.multiprocessing:
+            with Pool(4) as p:
+                scored_suggestions = p.map(self.calculate, suggestions)
+        else:
+            scored_suggestions = list(map(self.calculate, suggestions))
+        for scored_suggestion in scored_suggestions:
+            if scored_suggestion.total > self.best:
+                for key in scored_suggestion.change:
+                    self.the_good.add(key)
+            else:
+                for key in scored_suggestion.change:
+                    self.the_bad.add(key)
+        return scored_suggestions
+
+    def solve(self) -> None:
+        while True:
+            if self.do_sets:
+                # these will be ignored
+                self.the_ugly = self.the_bad.difference(self.the_good)
+                self.the_good = set()
+            else:
+                self.the_ugly = set()
+
+            # find and score suggestions in action order
+            scored_suggestions: List[ScoredSuggestion] = []
+            for action in self.list_actions():
+                scored_suggestions += self.score_suggestions(action(scored_suggestions))
+
+            # safety check if too much ignoring has happened
+            if len(scored_suggestions) == 0:
+                if self.do_sets:
+                    self.do_sets = False
+                    continue
+                else:
+                    break
+
+            # find the best suggestion (replace with max statement when code can be tested)
+            best_candidate = max(scored_suggestions, key=lambda x: x.total)
+
+            if best_candidate.total > self.best:
+                self.best = best_candidate.total
+                self.best_id = best_candidate.get_game_id()
+                print(f"change: {json.dumps(best_candidate.change, indent=4)}")
+                apply_change(
+                    self.solution[LK.locations],
+                    best_candidate.change,
+                    no_remove=self.no_remove,
+                )
+                store(self.mapName, best_candidate.score)
+                self.stale_progress = False
+                self.post_improvement(best_candidate)
+            elif self.do_sets:
+                self.do_sets = False
+            elif not self.stale_progress:
+                self.stale_progress = True
+            else:
+                break
+
+    def group_scored_suggestions(
+        self, scored_suggestions: List[ScoredSuggestion]
+    ) -> List[Suggestion]:
+        new_suggestions = []
+        if len(scored_suggestions) == 0:
+            return []
+
+        # apply the group_size highest improvements that don't interact
+        if Settings.do_groups:
+            group_change: Dict[str, Dict] = {}
+            picked = set()
+            pick_count = 0
+            for suggestion in sorted(
+                scored_suggestions, key=lambda x: x.total, reverse=True
+            ):
+                # the group_size highest totals
+                if suggestion.total < self.best:
+                    break
+                if any([key in picked for key in suggestion.change]):
+                    continue
+                for key in suggestion.change:
+                    picked.add(key)
+                    pick_count += 1
+                    for nkey, distance in self.distance_cache[key].items():
+                        if distance < Settings.groups_distance_limit:
+                            picked.add(nkey)  # don't need nearby
+                apply_change(group_change, suggestion.change, capped=False)
+                if pick_count >= Settings.group_size:
+                    break
+                if len(group_change) > 1 and Settings.partial_additions:
+                    new_suggestions.append(
+                        Suggestion(change=copy.deepcopy(group_change), tag=STag.group)
+                    )
+            new_suggestions.append(Suggestion(change=group_change, tag=STag.group))
+        return new_suggestions
 
     def generate_moves(
         self, locations: Dict[str, Dict]
@@ -157,64 +255,3 @@ class Solver(ABC):
                         else:
                             change[sub_2_key] = bundle(-1, 0)
                         yield Suggestion(change=change, tag=STag.change)
-
-    def score_suggestions(
-        self, suggestions: Iterable[Suggestion]
-    ) -> List[ScoredSuggestion]:
-        if Settings.multiprocessing:
-            with Pool(4) as p:
-                scored_suggestions = p.map(self.calculate, suggestions)
-        else:
-            scored_suggestions = list(map(self.calculate, suggestions))
-        for scored_suggestion in scored_suggestions:
-            if scored_suggestion.total > self.best:
-                for key in scored_suggestion.change:
-                    self.the_good.add(key)
-            else:
-                for key in scored_suggestion.change:
-                    self.the_bad.add(key)
-        return scored_suggestions
-
-    def solve(self) -> None:
-        while True:
-            if self.do_sets:
-                # these will be ignored
-                self.the_ugly = self.the_bad.difference(self.the_good)
-                self.the_good = set()
-            else:
-                self.the_ugly = set()
-
-            # find and score suggestions in action order
-            scored_suggestions: List[ScoredSuggestion] = []
-            for action in self.list_actions():
-                scored_suggestions += self.score_suggestions(action(scored_suggestions))
-
-            # safety check if too much ignoring has happened
-            if len(scored_suggestions) == 0:
-                if self.do_sets:
-                    self.do_sets = False
-                    continue
-                else:
-                    break
-
-            # find the best suggestion (replace with max statement when code can be tested)
-            best_candidate = max(scored_suggestions, key=lambda x: x.total)
-
-            if best_candidate.total > self.best:
-                self.best = best_candidate.total
-                self.best_id = best_candidate.get_game_id()
-                print(f"change: {json.dumps(best_candidate.change, indent=4)}")
-                apply_change(
-                    self.solution[LK.locations],
-                    best_candidate.change,
-                    no_remove=self.no_remove,
-                )
-                store(self.mapName, best_candidate.score)
-                self.stale_progress = False
-                self.post_improvement(best_candidate)
-            elif self.do_sets:
-                self.do_sets = False
-            elif not self.stale_progress:
-                self.stale_progress = True
-            else:
-                break

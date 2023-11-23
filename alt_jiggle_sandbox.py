@@ -103,13 +103,19 @@ def jiggle(mapName: str) -> None:
             store(mapName, score)
             total = new_total
         elif abs(new_total - total) < 16.0:
-            print("+", end="", flush=True)
+            # print("+", end="", flush=True)
+            pass
         else:
-            print("_", end="", flush=True)
-            total, id = best(mapName)
+            # print("_", end="", flush=True)
+            total, new_id = best(mapName)
             game = load_game(id)
             solution = get_solution(game)
-            distance_cache = build_distance_cache(solution[LK.locations], generalData)
+            if new_id != id:
+                print(total)
+                id = new_id
+                distance_cache = build_distance_cache(
+                    solution[LK.locations], generalData
+                )
 
 
 if __name__ == "__main__":

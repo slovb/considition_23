@@ -18,7 +18,7 @@ class RegularSolver(Solver):
     def list_actions(
         self,
     ) -> List[Callable[[List[ScoredSuggestion]], Iterable[Suggestion]]]:
-        return [self.find_suggestions, self.improve_scored_suggestions]
+        return [self.find_suggestions, self.group_scored_suggestions]
 
     def calculate(self, suggestion: Suggestion) -> ScoredSuggestion:
         return ScoredSuggestion(
@@ -107,38 +107,6 @@ class RegularSolver(Solver):
             for change in self.generate_consolidation(self.mapEntity[LK.locations]):
                 suggestions.append(change)
         return suggestions
-
-    def improve_scored_suggestions(
-        self, scored_suggestions: List[ScoredSuggestion]
-    ) -> List[Suggestion]:
-        new_suggestions = []
-        if len(scored_suggestions) == 0:
-            return []
-
-        # apply the group_size highest improvements that don't interact
-        if Settings.do_groups:
-            group_change: Dict[str, Dict] = {}
-            picked = set()
-            pick_count = 0
-            for suggestion in sorted(
-                scored_suggestions, key=lambda x: x.total, reverse=True
-            ):
-                # the group_size highest totals
-                if suggestion.total < self.best:
-                    break
-                if any([key in picked for key in suggestion.change]):
-                    continue
-                for key in suggestion.change:
-                    picked.add(key)
-                    pick_count += 1
-                    for nkey, distance in self.distance_cache[key].items():
-                        if distance < Settings.groups_distance_limit:
-                            picked.add(nkey)  # don't need nearby
-                apply_change(group_change, suggestion.change, capped=False)
-                if pick_count >= Settings.group_size:
-                    break
-            new_suggestions.append(Suggestion(change=group_change, tag=STag.group))
-        return new_suggestions
 
     def post_improvement(self, change):
         return super().post_improvement(change)

@@ -122,7 +122,7 @@ class SandboxSolver(Solver):
                 if scored_suggestion.tag != STag.add:
                     continue
                 for type in remaining_types:
-                    for f_count in [(1, 0), (2, 0), (0, 1), (1, 1)]:
+                    for f_count in [(1, 0), (2, 0), (0, 1), (1, 1), (2, 1)]:
                         change = {}
                         for loc_key, location in scored_suggestion.change.items():
                             if (
@@ -151,14 +151,12 @@ class SandboxSolver(Solver):
         for suggestion in self.generate_changes():
             yield suggestion
         if self.stale_progress:
-            for suggestion in self.generate_swaps():
+            for suggestion in self.generate_swaps(self.solution[LK.locations]):
                 yield suggestion
-            # for suggestion in self.generate_moves(self.solution[LK.locations])():
-            #     yield suggestion
-            # for suggestion in self.generate_consolidation(
-            #     self.solution[LK.locations]
-            # )():
-            #     yield suggestion
+            for suggestion in self.generate_moves(self.solution[LK.locations]):
+                yield suggestion
+            for suggestion in self.generate_consolidation(self.solution[LK.locations]):
+                yield suggestion
 
     def sandbox_groups(
         self, scored_suggestions: List[ScoredSuggestion]
@@ -288,8 +286,9 @@ class SandboxSolver(Solver):
             if f9Count < Settings.max_stations:  # increase f9100
                 yield Suggestion(change={key: bundle(0, 1)}, tag=STag.change)
 
-    def generate_swaps(self) -> Generator[Suggestion, None, None]:
-        locations = self.solution[LK.locations]
+    def generate_swaps(
+        self, locations: Dict[str, Dict]
+    ) -> Generator[Suggestion, None, None]:
         largeType = self.location_type[GK.groceryStoreLarge]
         for key, location in locations.items():
             if location[LK.locationType] == largeType:

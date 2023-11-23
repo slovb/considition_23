@@ -107,8 +107,7 @@ def jiggle(mapName: str) -> None:
 
     total, id = best(mapName)
     print(f"{total}\t\t{id}")
-    game = load_game(id)
-    solution = get_solution(game)
+    solution = get_solution(load_game(id))
 
     if mapName in [MN.gSandbox, MN.sSandbox]:
         sandbox_names = {key: key for key in solution[LK.locations].keys()}
@@ -138,12 +137,15 @@ def jiggle(mapName: str) -> None:
             store(mapName, score)
             total = new_total
         elif abs(new_total - total) < 16.0:
-            print("+", end="", flush=True)
+            # print("+", end="", flush=True)
+            pass
         else:
-            print("_", end="", flush=True)
-            total, id = best(mapName)
-            game = load_game(id)
-            solution = get_solution(game)
+            # print("_", end="", flush=True)
+            total, new_id = best(mapName)
+            if id != new_id:
+                print(new_total)
+                id = new_id
+            solution = get_solution(load_game(id))
 
 
 if __name__ == "__main__":

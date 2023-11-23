@@ -34,8 +34,9 @@ def build_hotspot_cache(mapEntity: Dict, generalData: Dict) -> Dict:
             if abc > way_too_far:  # very rough distance limit
                 continue
             distance = distanceBetweenPoint(i_lat, i_long, j_lat, j_long)
-            if distance < max(i_spread, j_spread):
-                # if distance < i_spread + j_spread + willingnessToTravelInMeters:
+            # if distance < i_spread + j_spread + willingnessToTravelInMeters:
+            # if distance < max(i_spread, j_spread):
+            if distance < max(i_spread, j_spread, willingnessToTravelInMeters):
                 hotspot_cache[i_key][KW.nearby][j_key] = distance
                 hotspot_cache[j_key][KW.nearby][i_key] = distance
             else:

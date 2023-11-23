@@ -11,6 +11,7 @@ class Settings:
     starting_point = "func"
     max_stations = 2
 
+    partial_additions = False
     do_sets = True
     do_groups = True
     group_size = 16
