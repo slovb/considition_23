@@ -60,12 +60,15 @@ class RegularSolver(Solver):
             type = location[LK.locationType]
             f3 = 1
             f9 = 0
-            if type == self.location_type[GK.groceryStoreLarge]:
-                f3 = 2
-                f9 = 0
-            elif type == self.location_type[GK.groceryStore]:
-                f3 = 2
-                f9 = 0
+            # if type == self.location_type[GK.groceryStoreLarge]:
+            #     f3 = 0
+            #     f9 = 2
+            # elif type == self.location_type[GK.groceryStore]:
+            #     f3 = 0
+            #     f9 = 1
+            # elif type == self.location_type[GK.gasStation]:
+            #     f3 = 2
+            #     f9 = 0
             solution[LK.locations][name] = bundle(f3=f3, f9=f9)
         return solution
 
@@ -97,6 +100,8 @@ class RegularSolver(Solver):
         ):  # try to add a missing location
             if key not in locations:
                 yield Suggestion(change={key: bundle(1, 0)}, tag=STag.change)
+                yield Suggestion(change={key: bundle(2, 0)}, tag=STag.change)
+                yield Suggestion(change={key: bundle(0, 1)}, tag=STag.change)
 
     def find_suggestions(self, _: List[ScoredSuggestion]) -> List[Suggestion]:
         suggestions = []

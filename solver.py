@@ -66,17 +66,19 @@ class Solver(ABC):
     ) -> List[ScoredSuggestion]:
         if Settings.multiprocessing:
             with Pool(4) as p:
-                scored_suggestions = p.map(self.calculate, suggestions)
+                scored_suggestions: Iterable = p.map(self.calculate, suggestions)
         else:
-            scored_suggestions = list(map(self.calculate, suggestions))
+            scored_suggestions = map(self.calculate, suggestions)
+        output = []
         for scored_suggestion in scored_suggestions:
             if scored_suggestion.total > self.best:
                 for key in scored_suggestion.change:
                     self.the_good.add(key)
+                    output.append(scored_suggestion)
             else:
                 for key in scored_suggestion.change:
                     self.the_bad.add(key)
-        return scored_suggestions
+        return output
 
     def solve(self) -> None:
         while True:
@@ -113,7 +115,7 @@ class Solver(ABC):
                     no_remove=self.no_remove,
                 )
                 store(self.mapName, best_candidate.score)
-                self.stale_progress = False
+                # self.stale_progress = False
                 self.post_improvement(best_candidate)
             elif self.do_sets:
                 self.do_sets = False
@@ -133,7 +135,7 @@ class Solver(ABC):
         if Settings.do_groups:
             group_change: Dict[str, Dict] = {}
             picked = set()
-            pick_count = 0
+            group_count = 0
             for suggestion in sorted(
                 scored_suggestions, key=lambda x: x.total, reverse=True
             ):
@@ -144,14 +146,18 @@ class Solver(ABC):
                     continue
                 for key in suggestion.change:
                     picked.add(key)
-                    pick_count += 1
+                    # group_count += 1
                     # for nkey, distance in self.distance_cache[key].items():
                     #     if distance < Settings.groups_distance_limit:
                     #         picked.add(nkey)  # don't need nearby
                 apply_change(group_change, suggestion.change, capped=False)
-                if pick_count >= Settings.group_size:
+                group_count += 1
+                if group_count >= Settings.group_size:
                     break
-                if len(group_change) > 1 and Settings.partial_additions:
+                if (
+                    Settings.partial_additions
+                    and group_count >= Settings.group_size / 2
+                ):
                     new_suggestions.append(
                         Suggestion(change=copy.deepcopy(group_change), tag=STag.group)
                     )
@@ -164,7 +170,7 @@ class Solver(ABC):
         adds = [
             bundle(1, 0),
             bundle(2, 0),
-            # bundle(0, 1),
+            bundle(0, 1),
         ]
         rems = [
             bundle(-1, 0),
@@ -193,8 +199,10 @@ class Solver(ABC):
         adds = [
             bundle(1, 0),
             bundle(2, 0),
-            # bundle(1, 1),
-            # bundle(2, 2),
+            bundle(0, 1),
+            # bundle(-1, 1),
+            bundle(1, 1),
+            bundle(2, 2),
         ]
         rems = [
             bundle(-1, 0),

@@ -79,9 +79,20 @@ def jiggle_regular(
     generalData: Dict,
     distance_cache: Dict[str, Dict],
 ) -> Dict:
-    key = random.choice(list(solution[LK.locations].keys()))
+    coin_toss = random.random()
+    if coin_toss <= 0.4:
+        key = random.choice(list(solution[LK.locations].keys()))
+    else:
+        key = random.choice(list(mapEntity[LK.locations].keys()))
+
+    if key not in solution[LK.locations]:
+        solution[LK.locations][key] = {
+            LK.f3100Count: 0,
+            LK.f9100Count: 0,
+        }
     location = solution[LK.locations][key]
-    if random.random() > 0.4:
+
+    if coin_toss > 0.4:
         increase(location)
     else:
         decrease(location)

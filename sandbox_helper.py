@@ -109,6 +109,7 @@ def find_possible_locations(
     return locations
 
 
+# great but expensive
 # def find_possible_locations(
 #     hotspot_cache: Dict, map_limiter: MapLimiter
 # ) -> Dict[str, Dict]:
